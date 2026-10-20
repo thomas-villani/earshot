@@ -123,7 +123,7 @@ For messages that don't fit in one frame, use a **random linear fountain code ov
 - Each emitted frame: pick a 16-bit seed, PRNG(seed) selects a random nonempty subset of the k blocks, payload = XOR of that subset.
 - Receiver: collects (seed, payload) pairs, runs incremental Gaussian elimination over GF(2); decodes once rank = k (typically needs k + 1–3 frames).
 - Sender in **broadcast mode** loops forever emitting fresh seeds. Late joiners and lossy listeners just keep collecting — there's no "missed chunk" concept.
-- Block size B: start at ~64 bytes (shorter transmissions are more robust than max-size ones); make it tunable and measure in the harness.
+- Block size B: default to the largest that fits a frame (140 − 6 header − 5 fountain = 129 bytes); keep it tunable. The milestone 2 simulator found frame success is nearly independent of payload length, while each transmission pays ~1 s of fixed marker overhead, so full frames give the best goodput (see NOTES.md).
 
 Optional optimization: emit the k systematic (unmixed) blocks first, then random combinations.
 

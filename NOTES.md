@@ -54,6 +54,55 @@ Laptop (Chrome) → Android phone (Chrome), audible-fast, 18-byte text, 1.83 s a
 
 Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `autoGainControl`, `voiceIsolation` all `false`; `sampleRate: 48000`, `sampleSize: 16`, `channelCount: 1`, `latency: 0.04`. Both AudioContexts reported 48000.
 
+## Milestone 2 — channel simulator (2026-10-20)
+
+`npm run sim -- [--trials N] [--only A,B,C,D,E]`. Chain: speaker low-pass → room impulse response (exponential noise tail, RT60 + direct-to-reverberant ratio) → ambient noise (white/pink) → mic high-pass → gain/clip → clock drift. Captured audio is fed to the modem in 2048-sample chunks, like the AudioWorklet. Numbers below are 30 trials per cell, so roughly ±9% sampling error.
+
+**SNR convention:** broadband power of the *transmitted* signal vs ambient noise. A first version measured SNR after the speaker filter, which silently scaled noise down whenever the speaker attenuated the signal and made band-limiting free. Fixed.
+
+### "Living room" SNR sweep (32 B; phone device, RT60 0.4 s, DRR 0 dB, pink noise, 50 ppm drift)
+
+| protocol \ SNR dB | 10 | 0 | −5 | −10 | −15 |
+|---|---|---|---|---|---|
+| audible-normal | 100% | 93% | 90% | 27% | 0% |
+| audible-fast | 100% | 100% | 87% | 47% | 0% |
+| audible-fastest | 83% | 80% | 70% | 37% | 0% |
+| ultrasound-normal | 100% | 100% | 97% | 100% | 53% |
+| ultrasound-fast | 100% | 100% | 100% | 100% | 73% |
+| ultrasound-fastest | 77% | 77% | 63% | 60% | 23% |
+| dt-fast | 97% | 63% | 20% | 0% | 0% |
+| dt-fastest | 70% | 80% | 7% | 0% | 0% |
+
+### Reverb (32 B, phone device, 20 dB pink SNR)
+
+| protocol \ RT60 (DRR) | 0.2 s (+3) | 0.4 s (0) | 0.8 s (−3) | 0.8 s (−9) |
+|---|---|---|---|---|
+| audible-normal | 100% | 100% | 90% | 70% |
+| audible-fast | 100% | 100% | 43% | 13% |
+| audible-fastest | 100% | 87% | 0% | 0% |
+| ultrasound-fast | 100% | 100% | 27% | 10% |
+
+### Payload length (audible, living room at 0 dB)
+
+| protocol | len | airtime | success | goodput |
+|---|---|---|---|---|
+| audible-fast | 16 | 1.83 s | 97% | 8.4 B/s |
+| audible-fast | 64 | 4.65 s | 87% | 11.9 B/s |
+| audible-fast | 140 | 9.26 s | 93% | 14.1 B/s |
+| audible-fastest | 16 | 1.26 s | 80% | 10.2 B/s |
+| audible-fastest | 64 | 2.67 s | 73% | 17.6 B/s |
+| audible-fastest | 140 | 4.97 s | 63% | 17.8 B/s |
+
+### Conclusions
+
+- **Reverb, not noise, is the main enemy.** Fast breaks down at RT60 0.8 s; Normal holds up best (longer symbols ride out the echo tail). Fastest already loses frames at 0.4 s, a typical living room.
+- **Fastest is unreliable even in good conditions** (~75–85% at 10 dB). Default stays **audible-fast**: 100% down to 0 dB in the living-room model.
+- **Use full frames.** Per-frame success barely depends on length, while each transmission pays ~1 s of fixed overhead, so goodput rises with payload size. Fountain block size defaults to the max (129 B), not the ~64 B originally guessed.
+- **Ultrasound beats audible against pink noise**, because room/TV noise has little energy above 15 kHz. That only holds if the phone speaker actually reproduces 15–19.5 kHz; our simple low-pass profiles can't settle that. **Real-device test required** before choosing a default.
+- **DT protocols are the weakest everywhere.** Candidates to hide from the picker.
+- **No wrong-data decodes** for payloads ≥ 16 B across ~5,000 trials; the per-frame CRC remains cheap insurance for the small-payload failures seen in milestone 0.
+- **Decode latency is ~0**: frames decode ~0.2 s *before* the waveform buffer ends (ggwave pads the tail). So perceived delay on devices is airtime, plus whatever the browser adds.
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
@@ -63,5 +112,8 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - [x] Laptop → Android, audible-fast, normal room
 - [ ] Android → laptop
 - [ ] audible-fastest and ultrasound protocols over the air
+- [ ] With a TV on: audible-fast vs ultrasound-fast (simulator predicts ultrasound wins if the speaker reproduces it)
+- [ ] Big echoey room (kitchen/hallway): audible-normal vs audible-fast (simulator predicts Fast fails at RT60 ~0.8 s)
+- [ ] URL send took ~6 s on laptop → Android (40 B; Fast airtime ≈ 3 s). Which protocol? Where does the extra time go?
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)
