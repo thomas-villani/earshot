@@ -1,0 +1,320 @@
+:root {
+  --bg: #f6f5f2;
+  --surface: #ffffff;
+  --text: #1b1b1f;
+  --muted: #6b6b75;
+  --border: #dedde3;
+  --accent: #5b3df5;
+  --accent-text: #ffffff;
+  --ok: #1f9d55;
+  --radius: 12px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121216;
+    --surface: #1d1d23;
+    --text: #ececf1;
+    --muted: #9a9aa6;
+    --border: #2f2f38;
+    --accent: #8b74ff;
+    --accent-text: #0d0d12;
+    --ok: #3ccf7f;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.top,
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.tabs {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.tabs button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.tabs button[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+button,
+.button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.big {
+  width: 100%;
+  padding: 14px;
+  font-size: 1.1rem;
+  margin: 8px 0;
+}
+
+.small {
+  padding: 2px 8px;
+  font-size: 0.85rem;
+}
+
+.type-picker {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.type-picker button {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+}
+
+.type-picker button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+textarea,
+input:not([type='checkbox']):not([type='range']),
+select {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin: 4px 0;
+}
+
+textarea {
+  resize: vertical;
+}
+
+label {
+  display: block;
+  margin: 6px 0;
+}
+
+label > span {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+label.check > span {
+  display: inline;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+#send-fields > button {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.meter {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 4px 0;
+  min-height: 1.2em;
+}
+
+.meter .over {
+  color: #d33;
+  font-weight: 600;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+#spectrogram {
+  display: block;
+  width: 100%;
+  height: 140px;
+  border-radius: var(--radius);
+  background: #000;
+  margin: 8px 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 10px 0;
+  animation: arrive 0.35s ease-out;
+}
+
+@keyframes arrive {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+
+.card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.card .label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.card .meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.card p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.card .text {
+  white-space: pre-wrap;
+}
+
+.card .url,
+.card .hex,
+.card .secret {
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+.card .name {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.card .detail {
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.actions:empty {
+  display: none;
+}
+
+details {
+  margin: 24px 0 40px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+h3 {
+  font-size: 0.9rem;
+  margin: 16px 0 4px;
+}
+
+pre {
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 20rem;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+}

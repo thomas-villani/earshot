@@ -103,6 +103,26 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - **No wrong-data decodes** for payloads ≥ 16 B across ~5,000 trials; the per-frame CRC remains cheap insurance for the small-payload failures seen in milestone 0.
 - **Decode latency is ~0**: frames decode ~0.2 s *before* the waveform buffer ends (ggwave pads the tail). So perceived delay on devices is airtime, plus whatever the browser adds.
 
+## Milestone 3 — typed messages + UI (2026-10-20)
+
+- Frame header is 6 bytes (magic, kind, nonce, CRC-16), leaving 134 bytes per SINGLE message (132 of payload after type+flags). Longer messages are refused until fountain coding lands.
+- **Compression only pays off above ~100 bytes** (`spike/compression.ts`, deflate-raw via CompressionStream):
+
+  | sample | raw | deflate |
+  |---|---|---|
+  | short text | 31 B | 33 B (+6%) |
+  | URL | 41 B | 43 B (+5%) |
+  | long Maps URL | 86 B | 86 B |
+  | contact JSON | 103 B | 95 B (−8%) |
+  | Wi-Fi string | 61 B | 63 B (+3%) |
+  | prompt JSON | 94 B | 82 B (−13%) |
+  | paragraph | 244 B | 153 B (−37%) |
+
+  "Compress only if smaller" handles this. **Future experiment:** a static dictionary for short messages (`https://`, `www.`, `.com`, JSON keys) via a second flags bit; `https://` alone is 8 bytes ≈ 0.5 s of Fast airtime.
+- Untrusted input: URL cards only for http(s) (anything else renders as text); decompression capped at 64 KB; vCard values escaped and line breaks stripped (prevents property injection); all rendering via text nodes.
+- No web API can add a contact or join Wi-Fi. Contacts use a generated `.vcf` (download) plus the share sheet with the file where `navigator.canShare({ files })` allows it. Prompts go through `navigator.share({ text })`, whose system sheet lists the installed assistant apps.
+- Headless Edge (`msedge --headless=new --screenshot`) is handy for layout checks; its window can't go narrower than ~500 px, so 390 px screenshots look cropped. Dev-only `#listen-demo` hash shows sample cards.
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
@@ -110,12 +130,17 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - [x] `getUserMedia` constraints applied on Android Chrome
 - [ ] ...and on iOS Safari
 - [x] Laptop → Android, audible-fast, normal room
-- [ ] Android → laptop
 - [x] Ultrasound over the air, laptop → Android, quiet office with good acoustics: works well (the laptop speaker and phone mic do handle 15–19.5 kHz)
 - [ ] audible-fastest over the air
 - [ ] With a TV on: audible-fast vs ultrasound-fast (simulator predicts ultrasound wins if the speaker reproduces it)
 - [ ] Big echoey room (kitchen/hallway): audible-normal vs audible-fast (simulator predicts Fast fails at RT60 ~0.8 s)
-- [ ] Ultrasound from a *phone* speaker (phone → laptop or phone → phone); small phone speakers may roll off sooner than a laptop's
+- [x] Ultrasound from a *phone* speaker: Android → laptop and laptop → Android both flawless (quiet office)
+- [x] Android → laptop (audible and ultrasound)
+- [ ] Contact card "Add to contacts" (.vcf download): Android offers import? iOS shows contact preview?
+- [ ] Contact card "Share" with .vcf file: does Chrome allow text/vcard in the share sheet?
+- [ ] "Pick from my contacts" (Contact Picker API) on Android Chrome
+- [ ] Prompt card "Send to assistant…": share sheet lists Claude/Gemini/etc. and they receive the text
+- [ ] Repeated message bumps "heard N×" instead of adding a card
 - [x] URL timing: 40 B on audible-normal felt like ~4–6 s by hand, consistent with 4.4 s airtime. No hidden device latency.
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)

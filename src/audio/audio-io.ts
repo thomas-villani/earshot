@@ -5,12 +5,20 @@ export const SAMPLE_RATE = 48000;
 
 export class AudioIO {
   readonly ctx: AudioContext;
-  private stream?: MediaStream;
+  /** Available while capturing; feeds the spectrogram. */
+  analyser?: AnalyserNode;
   trackSettings?: MediaTrackSettings;
   onSamples: (samples: Float32Array) => void = () => {};
+  private stream?: MediaStream;
+  private nodes: AudioNode[] = [];
+  private workletLoaded = false;
 
   constructor() {
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  }
+
+  get capturing(): boolean {
+    return !!this.stream;
   }
 
   /** Must be called from a user gesture. */
@@ -19,9 +27,11 @@ export class AudioIO {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
-    const track = this.stream.getAudioTracks()[0];
-    this.trackSettings = track.getSettings();
-    await this.ctx.audioWorklet.addModule(workletUrl);
+    this.trackSettings = this.stream.getAudioTracks()[0].getSettings();
+    if (!this.workletLoaded) {
+      await this.ctx.audioWorklet.addModule(workletUrl);
+      this.workletLoaded = true;
+    }
     const src = this.ctx.createMediaStreamSource(this.stream);
     const node = new AudioWorkletNode(this.ctx, 'capture-processor');
     node.port.onmessage = (e: MessageEvent<Float32Array>) => this.onSamples(e.data);
@@ -30,6 +40,21 @@ export class AudioIO {
     const mute = this.ctx.createGain();
     mute.gain.value = 0;
     node.connect(mute).connect(this.ctx.destination);
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0;
+    this.analyser.minDecibels = -110;
+    this.analyser.maxDecibels = -30;
+    src.connect(this.analyser);
+    this.nodes = [src, node, mute, this.analyser];
+  }
+
+  stopCapture(): void {
+    for (const n of this.nodes) n.disconnect();
+    this.nodes = [];
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = undefined;
+    this.analyser = undefined;
   }
 
   /** Plays a waveform; resolves when playback ends. */

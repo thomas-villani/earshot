@@ -3,25 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Send messages to nearby phones using sound. No app, no install, no server." />
     <title>Earshot</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 0 auto; padding: 1rem; background: #fff; color: #111; }
-      @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
-      textarea, select, button { font: inherit; width: 100%; box-sizing: border-box; margin: 0.25rem 0; padding: 0.5rem; }
-      pre { white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; }
-      .rx { border-left: 3px solid #3a7; padding-left: 0.5rem; margin: 0.5rem 0; }
-    </style>
   </head>
   <body>
-    <h1>Earshot</h1>
-    <p>Milestone 0 spike: send a short text over sound. Turn the volume up.</p>
-    <textarea id="msg" rows="3">hello from earshot</textarea>
-    <select id="protocol"></select>
-    <button id="send">Send</button>
-    <button id="listen">Listen</button>
-    <div id="received"></div>
-    <h3>Debug</h3>
-    <pre id="debug"></pre>
+    <header class="top">
+      <h1>Earshot</h1>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="send" aria-selected="true">Send</button>
+        <button role="tab" data-tab="listen" aria-selected="false">Listen</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="tab-send" role="tabpanel">
+        <div class="type-picker" id="type-picker"></div>
+        <form id="send-form"><div id="send-fields"></div></form>
+        <p class="meter"><span id="detected"></span><span id="size"></span></p>
+        <button id="send-btn" class="primary big" disabled>Send</button>
+        <p class="hint">Turn your volume up and hold the phones within a meter or two.</p>
+      </section>
+
+      <section id="tab-listen" role="tabpanel" hidden>
+        <button id="listen-btn" class="primary big">Start listening</button>
+        <canvas id="spectrogram" aria-label="Live spectrogram of the microphone"></canvas>
+        <p class="hint" id="listen-hint">Received messages appear here. Nothing opens or downloads without a tap.</p>
+        <div id="cards"></div>
+      </section>
+
+      <details id="settings">
+        <summary>Settings &amp; debug</summary>
+        <label><span>Protocol</span><select id="protocol"></select></label>
+        <label><span>Volume <output id="volume-out"></output></span><input id="volume" type="range" min="5" max="100" step="5" /></label>
+        <h3>Debug</h3>
+        <pre id="debug"></pre>
+      </details>
+    </main>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
