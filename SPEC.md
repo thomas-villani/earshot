@@ -81,21 +81,23 @@ A **message** is a typed payload:
 
 ```
 message = [type: u8][flags: u8][payload ...]
-flags bit0: payload is deflate-raw compressed (CompressionStream API)
+flags low nibble: codec. 0 = none, 1 = deflate-raw (CompressionStream), 2 = text model v1 (see below)
 ```
 
 | Type | Code | Payload | Receiver UI |
 |---|---|---|---|
 | TEXT | 0x01 | UTF-8 | Show + Copy |
 | URL | 0x02 | UTF-8 URL | Show full URL + "Open" button (never auto-open) |
-| CONTACT | 0x03 | compact JSON `{n, p, e, o}` | Show + "Save contact" (generate .vcf) |
-| WIFI | 0x04 | QR-style `WIFI:T:WPA;S:<ssid>;P:<pw>;;` | Show SSID + copy password |
-| ASSISTANT_PROMPT | 0x05 | JSON `{prompt, context?}` | Show + Copy (never auto-execute) |
+| CONTACT | 0x03 | `name␞phone␞email␞org` (␞ = 0x1E; trailing empties dropped) | Show + "Save contact" (generate .vcf) |
+| WIFI | 0x04 | `auth␞ssid␞password[␞1 if hidden]`, auth = W/E/N (WPA/WEP/open) | Show SSID + copy password |
+| ASSISTANT_PROMPT | 0x05 | `prompt[␞context]` | Show + Copy (never auto-execute) |
 | RTC_OFFER | 0x10 | v2 — see below | handled by rtc/ |
 | RTC_ANSWER | 0x11 | v2 | handled by rtc/ |
 | GAME_INVITE | 0x20 | v3 reserved | — |
 
-Compress only if it actually shrinks the payload.
+The sender tries every codec and keeps the smallest (raw wins for tiny or random payloads).
+
+**Text model v1** (`src/compress/`): a static model built for short messages, where deflate can't win. A 4,096-token byte-level vocabulary (selected from GPT-2's BPE merges, frequencies trained on Tatoeba + Gutenberg + synthetic URLs/contacts; `npm run train:compress`) is applied with a minimum-cost segmentation, then arithmetic coded with fixed token frequencies and an end-of-message token. About 3.4 bits per byte on held-out English; 49% smaller than raw/deflate on the held-out message set (`npm run eval:compress`, numbers in NOTES.md). A retrained model must use a new codec id so older pages reject it instead of decoding garbage.
 
 ### Frames
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { crc16, crc32 } from '../src/framing/crc';
 import { decodeFrame, encodeFrame, FRAME_HEADER_BYTES, FrameKind } from '../src/framing/frame';
-import { decodeMessage, detectMessage, encodeMessage, formatWifi, MessageType, parseWifi, type Message } from '../src/framing/message';
+import { Codec, decodeMessage, detectMessage, encodeMessage, formatWifi, MessageType, parseWifi, type Message } from '../src/framing/message';
+import { Rng } from './sim/rng';
 import { toVCard } from '../src/ui/vcard';
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
@@ -63,15 +64,30 @@ describe('message', () => {
     expect(await decodeMessage(await encodeMessage(m))).toEqual(m);
   });
 
-  it('keeps short text uncompressed and compresses repetitive text', async () => {
-    const short = await encodeMessage({ type: 'text', text: 'hi there' });
-    expect(short[1]).toBe(0);
-    expect(short.length).toBe(2 + 8);
-    const long = 'the quick brown fox jumps over the lazy dog. '.repeat(6);
-    const enc = await encodeMessage({ type: 'text', text: long });
-    expect(enc[1]).toBe(1);
-    expect(enc.length).toBeLessThan(long.length);
-    expect(await decodeMessage(enc)).toEqual({ type: 'text', text: long });
+  it('picks the smallest codec: raw for tiny payloads, the text model for English, deflate for repetition', async () => {
+    const tiny = await encodeMessage({ type: 'text', text: 'x' });
+    expect(tiny[1]).toBe(Codec.None);
+    expect(tiny.length).toBe(3);
+
+    const sentence = 'Can you grab some milk on the way home?';
+    const enc = await encodeMessage({ type: 'text', text: sentence });
+    expect(enc[1]).toBe(Codec.TextModelV1);
+    expect(enc.length - 2).toBeLessThan(sentence.length * 0.6);
+    expect(await decodeMessage(enc)).toEqual({ type: 'text', text: sentence });
+
+    const repetitive = 'ab'.repeat(300);
+    const rep = await encodeMessage({ type: 'text', text: repetitive });
+    expect(rep[1]).toBe(Codec.Deflate);
+    expect(await decodeMessage(rep)).toEqual({ type: 'text', text: repetitive });
+  });
+
+  it('round-trips random Unicode through whichever codec wins', async () => {
+    const rng = new Rng(11);
+    const alphabet = ['a', 'e', ' ', 'the ', 'Z', '7', '\n', 'é', '中', '🎉', '\x1e', '"'];
+    for (let t = 0; t < 40; t++) {
+      const text = Array.from({ length: 1 + rng.int(120) }, () => alphabet[rng.int(alphabet.length)]).join('');
+      expect(await decodeMessage(await encodeMessage({ type: 'text', text }))).toEqual({ type: 'text', text });
+    }
   });
 
   it('never turns a non-http(s) URL into a URL card', async () => {
@@ -85,16 +101,26 @@ describe('message', () => {
     const msg = (code: number, s: string | Uint8Array) => new Uint8Array([code, 0, ...(typeof s === 'string' ? utf8(s) : s)]);
     expect(await decodeMessage(new Uint8Array([1]))).toBeNull();
     expect(await decodeMessage(msg(MessageType.Text, new Uint8Array([0xff, 0xfe])))).toBeNull(); // bad UTF-8
-    expect(await decodeMessage(msg(MessageType.Contact, '{"n":'))).toBeNull();
-    expect(await decodeMessage(msg(MessageType.Contact, '{"p":"123"}'))).toBeNull();
-    expect(await decodeMessage(msg(MessageType.AssistantPrompt, '[1,2]'))).toBeNull();
-    expect(await decodeMessage(msg(MessageType.Wifi, 'not wifi'))).toBeNull();
-    expect(await decodeMessage(new Uint8Array([MessageType.Text, 1, 0xde, 0xad, 0xbe, 0xef]))).toBeNull(); // corrupt deflate
+    expect(await decodeMessage(msg(MessageType.Contact, '\x1e555-1234'))).toBeNull(); // no name
+    expect(await decodeMessage(msg(MessageType.AssistantPrompt, ''))).toBeNull();
+    expect(await decodeMessage(msg(MessageType.Wifi, 'X\x1eHome\x1epw'))).toBeNull(); // unknown auth
+    expect(await decodeMessage(msg(MessageType.Wifi, 'W'))).toBeNull(); // no SSID
+    expect(await decodeMessage(new Uint8Array([MessageType.Text, Codec.Deflate, 0xde, 0xad, 0xbe, 0xef]))).toBeNull();
+    expect(await decodeMessage(new Uint8Array([MessageType.Text, 0x0f, 0x41]))).toBeNull(); // codec from the future
   });
 
-  it('drops unexpected fields from contacts', async () => {
-    const bytes = new Uint8Array([MessageType.Contact, 0, ...utf8('{"n":"A","p":5,"x":"<script>"}')]);
-    expect(await decodeMessage(bytes)).toEqual({ type: 'contact', contact: { n: 'A' } });
+  it('ignores extra fields and strips separators from values', async () => {
+    const bytes = new Uint8Array([MessageType.Contact, 0, ...utf8('A\x1e555\x1ea@b.c\x1eOrg\x1e<script>')]);
+    expect(await decodeMessage(bytes)).toEqual({ type: 'contact', contact: { n: 'A', p: '555', e: 'a@b.c', o: 'Org' } });
+    const sneaky = await encodeMessage({ type: 'contact', contact: { n: 'Eve\x1e+1 666' } });
+    expect(await decodeMessage(sneaky)).toEqual({ type: 'contact', contact: { n: 'Eve +1 666' } });
+  });
+
+  it('survives garbage in the text-model codec without hanging', async () => {
+    const rng = new Rng(12);
+    for (let t = 0; t < 50; t++) {
+      await decodeMessage(new Uint8Array([MessageType.Text, Codec.TextModelV1, ...rng.bytes(rng.int(30))]));
+    }
   });
 
   it('refuses decompression bombs', async () => {

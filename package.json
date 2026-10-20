@@ -10,7 +10,9 @@
     "test": "vitest run",
     "sim": "tsx test/channel-sim.ts",
     "spike": "tsx spike/ggwave-node.ts",
-    "spike:errors": "tsx spike/ggwave-errors.ts"
+    "spike:errors": "tsx spike/ggwave-errors.ts",
+    "train:compress": "tsx tools/train-compressor.ts",
+    "eval:compress": "tsx test/compress-eval.ts"
   },
   "dependencies": {
     "ggwave": "0.4.0"

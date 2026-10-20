@@ -167,6 +167,28 @@ Block size (500 B, audible-fast): 129 B → 25 s, 64 B → 32 s, 32 B → 41 s (
 - Late joiners pay roughly one extra round plus the partial round they walked in on.
 - The v1 target "500-byte broadcast" lands at ~16 s in the model (dual fast).
 
+## Text compression (2026-10-20)
+
+Static-model compressor for short messages (`src/compress/`): byte-level vocabulary + minimum-cost segmentation + arithmetic coding with fixed token frequencies.
+
+- **Vocabulary:** candidates are the first 30,000 GPT-2 BPE merges (rough frequency order from 40 GB of web text), plus all 256 single bytes so any input encodes. Trained by repeated {segment corpus optimally → set cost = −log2(usage frequency)}, pruned to the N most-used tokens, then refined.
+- **Training data** (in git-ignored `data/`; credits in THIRD_PARTY_NOTICES.md): 250k Tatoeba English sentences, Sherlock Holmes (Gutenberg), 40k synthetic URLs/emails/contacts/Wi-Fi payloads. Dev set: 3k held-out sentences + 150 paragraphs + 1.5k synthetic items from a different seed.
+- **Vocabulary size sweep** (dev set, bits per byte; model JSON size): 1k 3.93 (9 KB) · 2k 3.57 (20 KB) · **4k 3.36 (45 KB)** · 8k 3.25 (93 KB) · 16k 3.22 (196 KB). Chose 4k: diminishing returns beyond. Loaded lazily (20 KB gzipped chunk).
+- **Packed payloads:** contact/Wi-Fi/prompt fields joined with 0x1E instead of JSON or `WIFI:` QR syntax.
+- **Held-out evaluation** (`npm run eval:compress`, hand-written messages never used in training). "Before" = old JSON/QR payloads with deflate-if-smaller:
+
+  | category | before | after | saving | airtime on Fast |
+  |---|---|---|---|---|
+  | short texts (20) | 27.9 B | 11.8 B | 58% | 2.97 → 2.01 s |
+  | URLs (15) | 48.3 B | 31.7 B | 34% | 4.18 → 3.20 s |
+  | contacts (8) | 67.1 B | 36.9 B | 45% | 5.31 → 3.53 s |
+  | Wi-Fi (6) | 43.5 B | 21.7 B | 50% | 3.93 → 2.60 s |
+  | prompts (8) | 77.3 B | 26.9 B | 65% | 5.90 → 2.87 s |
+  | long notes (4) | 164 B | 92.3 B | 44% | 2 fountain blocks → 1 frame |
+
+  Overall 3354 → 1721 bytes (**49% smaller**). URLs gain least because of random IDs.
+- Ideas not yet tried: an order-1 context (previous-token class) model; a URL-specific sub-model.
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)

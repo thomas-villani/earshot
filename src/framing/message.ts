@@ -1,6 +1,8 @@
 // Typed messages. See SPEC.md "Message model".
-//   [type: u8][flags: u8][payload...]   flags bit0: payload is deflate-raw compressed
+//   [type: u8][flags: u8][payload...]   flags low nibble: codec (0 none, 1 deflate-raw, 2 text model v1)
+// Structured payloads (contact, Wi-Fi, prompt) are fields separated by \x1e (ASCII record separator).
 // Everything decoded here came from the air: treat it as untrusted.
+import type { TextCodec } from '../compress/text-codec';
 
 export const MessageType = {
   Text: 0x01,
@@ -13,7 +15,18 @@ export const MessageType = {
   GameInvite: 0x20,
 } as const;
 
-const FLAG_DEFLATE = 0x01;
+export const Codec = { None: 0, Deflate: 1, TextModelV1: 2 } as const;
+const CODEC_MASK = 0x0f;
+const RS = '\x1e';
+
+let textCodec: Promise<TextCodec> | undefined;
+/** The trained model is ~45 KB, so load it on first use rather than with the page. */
+function getTextCodec(): Promise<TextCodec> {
+  textCodec ??= Promise.all([import('../compress/text-codec'), import('../compress/model-data.json')]).then(([m, data]) =>
+    m.TextCodec.fromData(data.default),
+  );
+  return textCodec;
+}
 
 /** Upper bound on a decoded message; matches the fountain's u16 length field and caps decompression bombs. */
 export const MAX_MESSAGE_BYTES = 65535;
@@ -57,42 +70,58 @@ export async function encodeMessage(msg: Message): Promise<Uint8Array> {
     case 'url':
       [code, payload] = [MessageType.Url, utf8.encode(msg.url)];
       break;
-    case 'contact':
-      [code, payload] = [MessageType.Contact, utf8.encode(JSON.stringify(compactContact(msg.contact)))];
-      break;
-    case 'wifi':
-      [code, payload] = [MessageType.Wifi, utf8.encode(formatWifi(msg.wifi))];
-      break;
-    case 'prompt': {
-      const body = msg.context ? { prompt: msg.prompt, context: msg.context } : { prompt: msg.prompt };
-      [code, payload] = [MessageType.AssistantPrompt, utf8.encode(JSON.stringify(body))];
+    case 'contact': {
+      const c = msg.contact;
+      [code, payload] = [MessageType.Contact, utf8.encode(packFields([c.n, c.p ?? '', c.e ?? '', c.o ?? '']))];
       break;
     }
+    case 'wifi': {
+      const w = msg.wifi;
+      const auth = w.auth === 'WPA' ? 'W' : w.auth === 'WEP' ? 'E' : 'N';
+      const fields = [auth, w.ssid, w.auth === 'nopass' ? '' : w.password];
+      if (w.hidden) fields.push('1');
+      [code, payload] = [MessageType.Wifi, utf8.encode(packFields(fields))];
+      break;
+    }
+    case 'prompt':
+      [code, payload] = [MessageType.AssistantPrompt, utf8.encode(packFields([msg.prompt, msg.context ?? '']))];
+      break;
     case 'unknown':
       [code, payload] = [msg.code, msg.payload];
       break;
   }
-  // compress only if it actually shrinks the payload (short strings usually grow)
-  const deflated = await deflate(payload);
-  const useDeflate = deflated.length < payload.length;
-  const body = useDeflate ? deflated : payload;
+  // try each codec and keep whichever is smallest (raw wins for tiny or random payloads)
+  const candidates: [number, Uint8Array][] = [
+    [Codec.None, payload],
+    [Codec.Deflate, await deflate(payload)],
+    [Codec.TextModelV1, (await getTextCodec()).encode(payload)],
+  ];
+  const [codec, body] = candidates.reduce((best, c) => (c[1].length < best[1].length ? c : best));
   const out = new Uint8Array(2 + body.length);
   out[0] = code;
-  out[1] = useDeflate ? FLAG_DEFLATE : 0;
+  out[1] = codec;
   out.set(body, 2);
   return out;
 }
 
-/** Returns null for malformed input (bad UTF-8, bad JSON, failed decompression, oversized). */
+/** Returns null for malformed input (bad UTF-8, missing fields, failed decompression, oversized, unknown codec). */
 export async function decodeMessage(bytes: Uint8Array): Promise<Message | null> {
   if (bytes.length < 2) return null;
   const [code, flags] = [bytes[0], bytes[1]];
-  let payload = bytes.subarray(2);
-  if (flags & FLAG_DEFLATE) {
-    const inflated = await inflate(payload, MAX_MESSAGE_BYTES);
-    if (!inflated) return null;
-    payload = inflated;
+  let payload: Uint8Array | null = bytes.subarray(2);
+  switch (flags & CODEC_MASK) {
+    case Codec.None:
+      break;
+    case Codec.Deflate:
+      payload = await inflate(payload, MAX_MESSAGE_BYTES);
+      break;
+    case Codec.TextModelV1:
+      payload = (await getTextCodec()).decode(payload, MAX_MESSAGE_BYTES);
+      break;
+    default:
+      return null; // a codec from a newer version of Earshot
   }
+  if (!payload) return null;
   try {
     switch (code) {
       case MessageType.Text:
@@ -103,20 +132,26 @@ export async function decodeMessage(bytes: Uint8Array): Promise<Message | null> 
         return isWebUrl(url) ? { type: 'url', url } : { type: 'text', text: url };
       }
       case MessageType.Contact: {
-        const c = JSON.parse(fromUtf8(payload));
-        if (typeof c !== 'object' || c === null || typeof c.n !== 'string') return null;
-        const contact: Contact = { n: c.n };
-        for (const k of ['p', 'e', 'o'] as const) if (typeof c[k] === 'string') contact[k] = c[k];
+        const [n, p, e, o] = fromUtf8(payload).split(RS);
+        if (!n) return null;
+        const contact: Contact = { n };
+        if (p) contact.p = p;
+        if (e) contact.e = e;
+        if (o) contact.o = o;
         return { type: 'contact', contact };
       }
       case MessageType.Wifi: {
-        const wifi = parseWifi(fromUtf8(payload));
-        return wifi ? { type: 'wifi', wifi } : null;
+        const [auth, ssid, password, hidden] = fromUtf8(payload).split(RS);
+        const kind = ({ W: 'WPA', E: 'WEP', N: 'nopass' } as const)[auth as 'W' | 'E' | 'N'];
+        if (!kind || !ssid) return null;
+        const wifi: Wifi = { auth: kind, ssid, password: kind === 'nopass' ? '' : (password ?? '') };
+        if (hidden === '1') wifi.hidden = true;
+        return { type: 'wifi', wifi };
       }
       case MessageType.AssistantPrompt: {
-        const p = JSON.parse(fromUtf8(payload));
-        if (typeof p !== 'object' || p === null || typeof p.prompt !== 'string') return null;
-        return typeof p.context === 'string' ? { type: 'prompt', prompt: p.prompt, context: p.context } : { type: 'prompt', prompt: p.prompt };
+        const [prompt, context] = fromUtf8(payload).split(RS);
+        if (!prompt) return null;
+        return context ? { type: 'prompt', prompt, context } : { type: 'prompt', prompt };
       }
       default:
         return { type: 'unknown', code, payload: payload.slice() };
@@ -124,6 +159,13 @@ export async function decodeMessage(bytes: Uint8Array): Promise<Message | null> 
   } catch {
     return null;
   }
+}
+
+/** Join fields with the record separator, dropping trailing empties and any separators inside values. */
+function packFields(fields: string[]): string {
+  const clean = fields.map((f) => f.replaceAll(RS, ' '));
+  while (clean.length > 1 && !clean[clean.length - 1]) clean.pop();
+  return clean.join(RS);
 }
 
 export function isWebUrl(s: string): boolean {
@@ -143,12 +185,6 @@ export function detectMessage(input: string): Message {
   const wifi = s.startsWith('WIFI:') ? parseWifi(s) : null;
   if (wifi) return { type: 'wifi', wifi };
   return { type: 'text', text: input };
-}
-
-function compactContact(c: Contact): Contact {
-  const out: Contact = { n: c.n };
-  for (const k of ['p', 'e', 'o'] as const) if (c[k]) out[k] = c[k];
-  return out;
 }
 
 // --- Wi-Fi QR format: WIFI:T:WPA;S:<ssid>;P:<password>;H:true;;  (\ ; , : " are backslash-escaped)
