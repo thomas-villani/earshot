@@ -106,6 +106,8 @@ frame header:
   [magic+version: u8]   0xE1 for v1 — reject anything else
   [kind: u8]            0 = SINGLE, 1 = FOUNTAIN
   [nonce: u16]          random per sender session (self-echo filtering, dedupe)
+  [crc16: u16]          CRC-16 over the rest of the frame; ggwave returns wrong
+                        bytes without error on small payloads (measured in milestone 0)
 
 SINGLE:   header + message bytes            (message fits in one frame)
 FOUNTAIN: header + [msgId: u16][k: u8][seed: u16] + encoded block (B bytes)
