@@ -116,6 +116,32 @@ function body(msg: Message): { label: string; content: HTMLElement[]; actions: (
   }
 }
 
+export interface ProgressHandle {
+  el: HTMLElement;
+  update(have: number, need: number): void;
+}
+
+/** Placeholder for a fountain-coded message that's still arriving. */
+export function renderProgress(nonce: number): ProgressHandle {
+  const bar = h('progress', { max: 1, value: 0 });
+  const count = h('span', { class: 'meta' });
+  const el = h(
+    'article',
+    { class: 'card card-progress' },
+    h('header', {}, h('span', { class: 'label' }, 'Receiving…'), count),
+    bar,
+    h('p', { class: 'detail' }, `Long message from #${nonce.toString(16).padStart(4, '0')}. Keep listening; any blocks will do.`),
+  );
+  return {
+    el,
+    update(have, need) {
+      bar.max = need;
+      bar.value = have;
+      count.textContent = `${have} / ${need} blocks`;
+    },
+  };
+}
+
 export interface CardHandle {
   el: HTMLElement;
   setCount(n: number): void;

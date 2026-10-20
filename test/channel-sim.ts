@@ -1,5 +1,7 @@
 // Acoustic channel simulator: frame success rates per protocol/payload under noise, reverb and device band-limits.
 // Usage: npm run sim -- [--trials N] [--only A,B,...]
+import { encodeMessage } from '../src/framing/message';
+import { Receiver, Transmission } from '../src/framing/pipeline';
 import { GgwaveModem } from '../src/modem/ggwave-modem';
 import { PROTOCOLS, type ProtocolId } from '../src/modem/modem';
 import { applyChannel, CLEAN, SAMPLE_RATE, type ChannelConfig, type DeviceProfile } from './sim/channel';
@@ -138,6 +140,103 @@ if (run('E')) {
         console.log(`| ${p} | ${len} | ${r.airtime.toFixed(2)} s | ${pct(r)} | ${goodput.toFixed(1)} | ${Number.isNaN(r.latency) ? '–' : r.latency.toFixed(2) + ' s'} |`);
       }
     }
+  }
+}
+
+// --- end-to-end: whole messages through the fountain pipeline
+
+/** Silence between rounds of a transmission, in seconds. */
+const GAP = 0.2;
+/** Scale that brings ggwave's output to MIC_PEAK; fixed so dual-band mixes keep their -3 dB per band. */
+const OUTPUT_SCALE = (() => {
+  const w = modem.encode(new Uint8Array(32), 'audible-fast');
+  let peak = 0;
+  for (const v of w) peak = Math.max(peak, Math.abs(v));
+  return MIC_PEAK / peak;
+})();
+
+interface E2EResult {
+  /** fraction of trials that decoded within the round limit */
+  ok: number;
+  /** median seconds of listening until the message decoded */
+  median: number;
+}
+
+/**
+ * Broadcast a message (looping rounds) through the channel into a listener that may join late.
+ * Time is measured from when the listener starts listening.
+ */
+async function runE2E(len: number, lanes: ProtocolId[], cfg: ChannelConfig, seed: number, opts: { maxFrameBytes?: number; lateJoin?: boolean } = {}): Promise<E2EResult> {
+  const rng = new Rng(seed);
+  const times: number[] = [];
+  let ok = 0;
+  for (let t = 0; t < TRIALS; t++) {
+    const text = Array.from(rng.bytes(len), (b) => String.fromCharCode(97 + (b % 26))).join('');
+    const bytes = await encodeMessage({ type: 'text', text });
+    const tx = new Transmission(bytes, 1, opts.maxFrameBytes ?? modem.maxFrameBytes, lanes.length);
+    const rx = new Receiver(2, () => 0);
+    modem.setSampleRate(SAMPLE_RATE);
+    // late joiners start listening somewhere in the first two rounds
+    let skip = opts.lateJoin ? Math.floor(rng.next() * 2 * 12 * SAMPLE_RATE) : 0;
+    let heard = 0;
+    let done = false;
+    for (let round = 0; round < 80 && !done; round++) {
+      const frames = tx.nextRound();
+      const wave = modem.encodeParallel(frames.map((frame, i) => ({ frame, protocol: lanes[i] }))).map((v) => v * OUTPUT_SCALE);
+      const captured = applyChannel(wave, cfg, rng, 0, GAP);
+      for (let i = 0; i < captured.length && !done; i += CHUNK) {
+        let chunk = captured.subarray(i, i + CHUNK);
+        if (skip >= chunk.length) {
+          skip -= chunk.length;
+          continue;
+        }
+        chunk = chunk.subarray(skip);
+        skip = 0;
+        heard += chunk.length;
+        for (const f of modem.pushSamples(chunk)) {
+          if ((await rx.push(f)).kind === 'message') done = true;
+        }
+      }
+    }
+    if (done) {
+      ok++;
+      times.push(heard / SAMPLE_RATE);
+    }
+  }
+  times.sort((a, b) => a - b);
+  return { ok: ok / TRIALS, median: times.length ? times[Math.floor(times.length / 2)] : NaN };
+}
+
+const e2e = (r: E2EResult) => (r.ok === 0 ? 'never' : `${r.median.toFixed(0)} s${r.ok < 1 ? ` (${Math.round(r.ok * 100)}%)` : ''}`);
+
+if (run('F')) {
+  console.log('\n### F. Whole-message delivery time, broadcast mode, living room\n');
+  console.log('Median seconds of listening until the message decodes; "(N%)" = share of trials that decoded within 80 rounds. Late joiners start in the first ~24 s.\n');
+  const modes: [string, ProtocolId[]][] = [
+    ['audible-fast', ['audible-fast']],
+    ['ultrasound-fast', ['ultrasound-fast']],
+    ['dual fast', ['audible-fast', 'ultrasound-fast']],
+  ];
+  console.log('| message | mode | 10 dB | 0 dB | -5 dB | 0 dB, late joiner |');
+  console.log('|---|---|---|---|---|---|');
+  for (const len of [100, 500, 1500]) {
+    for (const [name, lanes] of modes) {
+      const cells: string[] = [];
+      for (const snr of [10, 0, -5]) cells.push(e2e(await runE2E(len, lanes, { ...LIVING_ROOM, snrDb: snr }, seed++)));
+      cells.push(e2e(await runE2E(len, lanes, { ...LIVING_ROOM, snrDb: 0 }, seed++, { lateJoin: true })));
+      console.log(`| ${len} B | ${name} | ${cells.join(' | ')} |`);
+    }
+  }
+}
+
+if (run('G')) {
+  console.log('\n### G. Fountain block size, 500 B message, audible-fast, living room\n');
+  console.log('| block size | 10 dB | 0 dB | -5 dB |');
+  console.log('|---|---|---|---|');
+  for (const [b, maxFrame] of [[129, 140], [64, 75], [32, 43]] as const) {
+    const cells: string[] = [];
+    for (const snr of [10, 0, -5]) cells.push(e2e(await runE2E(500, ['audible-fast'], { ...LIVING_ROOM, snrDb: snr }, seed++, { maxFrameBytes: maxFrame })));
+    console.log(`| ${b} B | ${cells.join(' | ')} |`);
   }
 }
 

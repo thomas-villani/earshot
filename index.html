@@ -20,8 +20,12 @@
         <div class="type-picker" id="type-picker"></div>
         <form id="send-form"><div id="send-fields"></div></form>
         <p class="meter"><span id="detected"></span><span id="size"></span></p>
-        <button id="send-btn" class="primary big" disabled>Send</button>
-        <p class="hint">Turn your volume up and hold the phones within a meter or two.</p>
+        <div class="send-buttons">
+          <button id="send-btn" class="primary big" disabled>Send</button>
+          <button id="broadcast-btn" class="big" disabled>Broadcast</button>
+        </div>
+        <p class="hint" id="tx-status" aria-live="polite"></p>
+        <p class="hint">Turn your volume up and hold the phones within a meter or two. Broadcast repeats until you stop it, so anyone nearby can tune in.</p>
       </section>
 
       <section id="tab-listen" role="tabpanel" hidden>
@@ -33,7 +37,7 @@
 
       <details id="settings">
         <summary>Settings &amp; debug</summary>
-        <label><span>Protocol</span><select id="protocol"></select></label>
+        <label><span>Transmit mode</span><select id="mode"></select></label>
         <label><span>Volume <output id="volume-out"></output></span><input id="volume" type="range" min="5" max="100" step="5" /></label>
         <h3>Debug</h3>
         <pre id="debug"></pre>

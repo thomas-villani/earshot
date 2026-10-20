@@ -34,6 +34,28 @@ describe('GgwaveModem', () => {
     expect(roundTrip(frame, 128, protocol as any)).toEqual([frame]);
   });
 
+  it('decodes simultaneous audible + ultrasound frames from one mixed waveform', () => {
+    const a = new TextEncoder().encode('audible lane frame');
+    const u = new TextEncoder().encode('ultrasound lane frame');
+    const wave = modem.encodeParallel([
+      { frame: a, protocol: 'audible-fast' },
+      { frame: u, protocol: 'ultrasound-fast' },
+    ]);
+    const padded = new Float32Array(wave.length + 48000);
+    padded.set(wave, 2000);
+    const got = modem.pushSamples(padded).map((f) => new TextDecoder().decode(f));
+    expect(got.sort()).toEqual(['audible lane frame', 'ultrasound lane frame']);
+  });
+
+  it('refuses to mix two frames in the same band', () => {
+    expect(() =>
+      modem.encodeParallel([
+        { frame: new Uint8Array(8), protocol: 'audible-fast' },
+        { frame: new Uint8Array(8), protocol: 'dt-fast' },
+      ]),
+    ).toThrow();
+  });
+
   it('rejects frames over 140 bytes rather than truncating', () => {
     expect(() => modem.encode(new Uint8Array(141), 'audible-fast')).toThrow(RangeError);
     expect(() => modem.encode(new Uint8Array(0), 'audible-fast')).toThrow(RangeError);

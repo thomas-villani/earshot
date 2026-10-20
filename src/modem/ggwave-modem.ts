@@ -1,5 +1,5 @@
 import factory from 'ggwave';
-import type { Modem, ProtocolId } from './modem';
+import { BAND_OF, type Modem, type ProtocolId } from './modem';
 
 // DT_NORMAL is omitted: it never decoded in the milestone 0 spike, even on a clean loopback.
 const PROTOCOL_NAMES: Record<ProtocolId, string> = {
@@ -12,14 +12,20 @@ const PROTOCOL_NAMES: Record<ProtocolId, string> = {
   'dt-fast': 'GGWAVE_PROTOCOL_DT_FAST',
   'dt-fastest': 'GGWAVE_PROTOCOL_DT_FASTEST',
 };
+const ALL_NAMES = [...Object.values(PROTOCOL_NAMES), 'GGWAVE_PROTOCOL_DT_NORMAL'];
 
 /** ggwave's samplesPerFrame; decode() silently drops any partial frame, so input is buffered to multiples of this. */
 const SAMPLES_PER_FRAME = 1024;
 
+/**
+ * One TX instance plus one RX instance per band, so simultaneous audible + ultrasound transmissions
+ * both decode (a single decoder locks onto one transmission). 3 of ggwave's 4 allowed instances.
+ */
 export class GgwaveModem implements Modem {
   readonly maxFrameBytes = 140;
   private g: any;
-  private instance = -1;
+  private tx = -1;
+  private rx: number[] = [];
   private rate = 48000;
   private pending = new Float32Array(SAMPLES_PER_FRAME);
   private fill = 0;
@@ -43,17 +49,28 @@ export class GgwaveModem implements Modem {
 
   setSampleRate(rate: number): void {
     // ggwave caps the number of live instances (4), so always free before re-creating.
-    if (this.instance >= 0) this.g.free(this.instance);
+    for (const inst of [this.tx, ...this.rx]) if (inst >= 0) this.g.free(inst);
+    this.tx = this.init(rate, ALL_NAMES);
+    const band = (b: 'audible' | 'ultrasound') =>
+      (Object.keys(PROTOCOL_NAMES) as ProtocolId[]).filter((p) => BAND_OF[p] === b).map((p) => PROTOCOL_NAMES[p]);
+    // DT tones overlap the audible band, so the audible decoder listens for them too
+    this.rx = [this.init(rate, [...band('audible'), 'GGWAVE_PROTOCOL_DT_NORMAL']), this.init(rate, band('ultrasound'))];
+    this.rate = rate;
+    this.fill = 0;
+  }
+
+  /** rxToggleProtocol is global but captured per instance at init, so set it just before each init. */
+  private init(rate: number, rxProtocols: string[]): number {
+    for (const name of ALL_NAMES) this.g.rxToggleProtocol(this.g.ProtocolId[name], rxProtocols.includes(name) ? 1 : 0);
     const F = this.g.SampleFormat;
     const p = this.g.getDefaultParameters();
     p.sampleRateInp = rate;
     p.sampleRateOut = rate;
     p.sampleFormatInp = F.GGWAVE_SAMPLE_FORMAT_F32;
     p.sampleFormatOut = F.GGWAVE_SAMPLE_FORMAT_F32;
-    this.instance = this.g.init(p);
-    if (this.instance < 0) throw new Error('ggwave init failed');
-    this.rate = rate;
-    this.fill = 0;
+    const inst = this.g.init(p);
+    if (inst < 0) throw new Error('ggwave init failed');
+    return inst;
   }
 
   encode(frame: Uint8Array, protocol: ProtocolId): Float32Array {
@@ -61,11 +78,24 @@ export class GgwaveModem implements Modem {
       // ggwave would silently truncate to 140 bytes
       throw new RangeError(`frame must be 1..${this.maxFrameBytes} bytes, got ${frame.length}`);
     }
-    const view: Int8Array = this.g.encode(this.instance, frame, this.g.ProtocolId[PROTOCOL_NAMES[protocol]], this.volume);
+    const view: Int8Array = this.g.encode(this.tx, frame, this.g.ProtocolId[PROTOCOL_NAMES[protocol]], this.volume);
     // view aliases a static WASM buffer that the next call overwrites
     const bytes = new Uint8Array(view.length);
     bytes.set(new Uint8Array(view.buffer, view.byteOffset, view.length));
     return new Float32Array(bytes.buffer);
+  }
+
+  encodeParallel(items: { frame: Uint8Array; protocol: ProtocolId }[]): Float32Array {
+    const bands = new Set(items.map((i) => BAND_OF[i.protocol]));
+    if (bands.size !== items.length) throw new Error('parallel frames must use different bands');
+    const waves = items.map((i) => this.encode(i.frame, i.protocol));
+    if (waves.length === 1) return waves[0];
+    // split the power evenly so the mix is as loud as a single transmission
+    const gain = 1 / Math.sqrt(waves.length);
+    const out = new Float32Array(Math.max(...waves.map((w) => w.length)));
+    for (const w of waves) for (let i = 0; i < w.length; i++) out[i] += w[i] * gain;
+    for (let i = 0; i < out.length; i++) out[i] = Math.max(-1, Math.min(1, out[i]));
+    return out;
   }
 
   pushSamples(samples: Float32Array): Uint8Array[] {
@@ -77,8 +107,11 @@ export class GgwaveModem implements Modem {
       i += n;
       if (this.fill === SAMPLES_PER_FRAME) {
         this.fill = 0;
-        const res: Int8Array = this.g.decode(this.instance, new Uint8Array(this.pending.buffer));
-        if (res && res.length > 0) out.push(Uint8Array.from(new Uint8Array(res.buffer, res.byteOffset, res.length)));
+        const input = new Uint8Array(this.pending.buffer);
+        for (const inst of this.rx) {
+          const res: Int8Array = this.g.decode(inst, input);
+          if (res && res.length > 0) out.push(Uint8Array.from(new Uint8Array(res.buffer, res.byteOffset, res.length)));
+        }
       }
     }
     return out;

@@ -57,9 +57,10 @@ export class AudioIO {
     this.analyser = undefined;
   }
 
-  /** Plays a waveform; resolves when playback ends. */
-  async play(wave: Float32Array): Promise<void> {
+  /** Plays a waveform; resolves when playback ends or `signal` aborts it. */
+  async play(wave: Float32Array, signal?: AbortSignal): Promise<void> {
     await this.ctx.resume();
+    if (signal?.aborted) return;
     const buf = this.ctx.createBuffer(1, wave.length, SAMPLE_RATE);
     buf.copyToChannel(wave as Float32Array<ArrayBuffer>, 0);
     const src = this.ctx.createBufferSource();
@@ -67,6 +68,7 @@ export class AudioIO {
     src.connect(this.ctx.destination);
     return new Promise((resolve) => {
       src.onended = () => resolve();
+      signal?.addEventListener('abort', () => src.stop(), { once: true });
       src.start();
     });
   }

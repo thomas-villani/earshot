@@ -125,7 +125,12 @@ For messages that don't fit in one frame, use a **random linear fountain code ov
 - Sender in **broadcast mode** loops forever emitting fresh seeds. Late joiners and lossy listeners just keep collecting — there's no "missed chunk" concept.
 - Block size B: default to the largest that fits a frame (140 − 6 header − 5 fountain = 129 bytes); keep it tunable. The milestone 2 simulator found frame success is nearly independent of payload length, while each transmission pays ~1 s of fixed marker overhead, so full frames give the best goodput (see NOTES.md).
 
-Optional optimization: emit the k systematic (unmixed) blocks first, then random combinations.
+As built (milestone 4):
+- **Systematic first:** seeds `0..k-1` mean "source block *seed* alone"; seeds ≥ k select a pseudo-random subset from (seed, k). A lossless listener decodes from exactly k frames.
+- **Even blocks:** k = ⌈(6 + len) / 129⌉, then B = ⌈(6 + len) / k⌉ so the last block isn't mostly padding.
+- **msgId = CRC-32(message) & 0xFFFF**, so re-sending the same content tops up listeners mid-decode instead of starting a new transfer.
+- **Dual band (lanes):** each round plays one frame per lane simultaneously, e.g. audible-fast + ultrasound-fast (~2× throughput; see NOTES.md). SINGLE messages repeat the same frame on every lane for diversity; fountain lanes carry different seeds. Receivers always run one decoder per band. Default transmit mode: Dual Fast.
+- **Send** = ⌈(k + max(1, ⌈k/4⌉)) / lanes⌉ rounds (blocks plus repair margin); **Broadcast** loops until stopped and holds a Screen Wake Lock.
 
 ### UI
 
