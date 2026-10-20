@@ -111,9 +111,11 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - [ ] ...and on iOS Safari
 - [x] Laptop → Android, audible-fast, normal room
 - [ ] Android → laptop
-- [ ] audible-fastest and ultrasound protocols over the air
+- [x] Ultrasound over the air, laptop → Android, quiet office with good acoustics: works well (the laptop speaker and phone mic do handle 15–19.5 kHz)
+- [ ] audible-fastest over the air
 - [ ] With a TV on: audible-fast vs ultrasound-fast (simulator predicts ultrasound wins if the speaker reproduces it)
 - [ ] Big echoey room (kitchen/hallway): audible-normal vs audible-fast (simulator predicts Fast fails at RT60 ~0.8 s)
-- [ ] URL send took ~6 s on laptop → Android (40 B; Fast airtime ≈ 3 s). Which protocol? Where does the extra time go?
+- [ ] Ultrasound from a *phone* speaker (phone → laptop or phone → phone); small phone speakers may roll off sooner than a laptop's
+- [x] URL timing: 40 B on audible-normal felt like ~4–6 s by hand, consistent with 4.4 s airtime. No hidden device latency.
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)
