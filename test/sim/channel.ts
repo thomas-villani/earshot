@@ -126,7 +126,7 @@ export function applyChannel(wave: Float32Array, cfg: ChannelConfig, rng: Rng, l
 
   const pre = Math.round(leadIn * SAMPLE_RATE);
   const total = pre + x.length + Math.round(tail * SAMPLE_RATE);
-  let y = new Float32Array(total);
+  let y: Float32Array = new Float32Array(total);
   y.set(x, pre);
 
   if (Number.isFinite(cfg.snrDb)) {
