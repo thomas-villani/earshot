@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earshot</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 0 auto; padding: 1rem; background: #fff; color: #111; }
+      @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+      textarea, select, button { font: inherit; width: 100%; box-sizing: border-box; margin: 0.25rem 0; padding: 0.5rem; }
+      pre { white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; }
+      .rx { border-left: 3px solid #3a7; padding-left: 0.5rem; margin: 0.5rem 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Earshot</h1>
+    <p>Milestone 0 spike: send a short text over sound. Turn the volume up.</p>
+    <textarea id="msg" rows="3">hello from earshot</textarea>
+    <select id="protocol"></select>
+    <button id="send">Send</button>
+    <button id="listen">Listen</button>
+    <div id="received"></div>
+    <h3>Debug</h3>
+    <pre id="debug"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
