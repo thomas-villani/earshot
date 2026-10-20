@@ -48,10 +48,20 @@ On a full frame, Fastest moves ~28 B/s and Fast ~15 B/s. There is roughly 1 s of
 - **ggwave can return wrong bytes (and wrong lengths) without signaling an error.** This happens mostly with 2–3 byte payloads, but an earlier fixed-alignment sweep also saw ~5% errors at 8–11 bytes on Fastest. Its Reed-Solomon parity is too short for tiny payloads. → Every frame needs our own integrity check, not only fountain messages.
 - **DT_NORMAL never decodes**, so it's excluded from the protocol list. DT_FAST drops many frames.
 
+### First over-the-air test (2026-10-20)
+
+Laptop (Chrome) → Android phone (Chrome), audible-fast, 18-byte text, 1.83 s airtime: decoded byte-exact on the first try.
+
+Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `autoGainControl`, `voiceIsolation` all `false`; `sampleRate: 48000`, `sampleSize: 16`, `channelCount: 1`, `latency: 0.04`. Both AudioContexts reported 48000.
+
 ## Manual test checklist (real devices)
 
-- [ ] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome / iOS Safari; decode works with the browser-resampled mic
-- [ ] `getUserMedia` constraints actually applied (`track.getSettings()` shown in debug panel)
-- [ ] Laptop → Android and Android → laptop, audible-fast, normal room
+- [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
+- [ ] ...and on iOS Safari
+- [x] `getUserMedia` constraints applied on Android Chrome
+- [ ] ...and on iOS Safari
+- [x] Laptop → Android, audible-fast, normal room
+- [ ] Android → laptop
+- [ ] audible-fastest and ultrasound protocols over the air
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)
