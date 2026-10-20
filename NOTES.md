@@ -145,6 +145,28 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - Conclusion: ~2× throughput in ordinary conditions, breaking even only when it's very noisy. Pairs naturally with fountain coding (each band carries different blocks; the receiver doesn't care which band a block came from). Receivers should always run both decoders.
 - Not modeled: speaker nonlinearity / intermodulation when playing both bands loudly. **Real-phone test needed.**
 
+## Milestone 4 — fountain coding + dual band (2026-10-20)
+
+End-to-end simulator (`npm run sim -- --only F,G`), living room model, broadcast mode with 200 ms gaps between rounds, 12 trials per cell. Median seconds of listening until the whole message decodes:
+
+| message | mode | 10 dB | 0 dB | −5 dB | 0 dB, late joiner |
+|---|---|---|---|---|---|
+| 100 B | audible-fast | 6 s | 6 s | 6 s | 9 s |
+| 100 B | dual fast | 6 s | 6 s | 6 s | 10 s |
+| 500 B | audible-fast | 25 s | 25 s | 25 s | 40 s |
+| 500 B | ultrasound-fast | 25 s | 25 s | 25 s | 38 s |
+| 500 B | dual fast | 16 s | 16 s | 25 s | 28 s |
+| 1500 B | audible-fast | 71 s | 71 s | 89 s | 101 s |
+| 1500 B | ultrasound-fast | 71 s | 71 s | 71 s | 84 s |
+| 1500 B | dual fast | 35 s | 35 s | 44 s | 56 s |
+
+Block size (500 B, audible-fast): 129 B → 25 s, 64 B → 32 s, 32 B → 41 s (61 s at −5 dB). **Full-size blocks win**, confirming the milestone 2 conclusion end to end.
+
+- Back-to-back rounds with a 200 ms gap decode reliably; every trial completed.
+- **Dual band halves delivery time for long messages** (1500 B: 71 → 35 s). At 500 B (k = 4) the gain is 25 → 16 s, limited by rounding to whole rounds. Single-frame messages gain only diversity, not speed.
+- Late joiners pay roughly one extra round plus the partial round they walked in on.
+- The v1 target "500-byte broadcast" lands at ~16 s in the model (dual fast).
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
@@ -163,6 +185,10 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - [ ] "Pick from my contacts" (Contact Picker API) on Android Chrome
 - [ ] Prompt card "Send to assistant…": share sheet lists Claude/Gemini/etc. and they receive the text
 - [ ] Repeated message bumps "heard N×" instead of adding a card
+- [ ] Phone → phone: dual fast vs audible-fast on a ~400 B message (expect ~2× faster); listen for distortion when both bands play loudly
+- [ ] Late joiner: start Broadcast, begin listening ~20 s later, still decodes
+- [ ] Three listeners (laptop + 2 phones) receive one ~500 B broadcast (v1 "done" criterion)
+- [ ] Screen Wake Lock keeps a broadcast going on Android
 - [x] URL timing: 40 B on audible-normal felt like ~4–6 s by hand, consistent with 4.4 s airtime. No hidden device latency.
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)
