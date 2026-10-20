@@ -30,7 +30,7 @@ export class GgwaveModem implements Modem {
 
   static async create(opts: { sampleRate?: number; volume?: number } = {}): Promise<GgwaveModem> {
     // Silence the binding's stdout printf ("n = ..., nActual = ...") and ggwave's own logging.
-    const g = await (factory as any)({ print: () => {}, printErr: () => {} });
+    const g = await factory({ print: () => {}, printErr: () => {} });
     g.disableLog();
     const m = new GgwaveModem(g, opts.volume ?? 25);
     m.setSampleRate(opts.sampleRate ?? 48000);

@@ -123,6 +123,28 @@ Android Chrome `track.getSettings()`: `echoCancellation`, `noiseSuppression`, `a
 - No web API can add a contact or join Wi-Fi. Contacts use a generated `.vcf` (download) plus the share sheet with the file where `navigator.canShare({ files })` allows it. Prompts go through `navigator.share({ text })`, whose system sheet lists the installed assistant apps.
 - Headless Edge (`msedge --headless=new --screenshot`) is handy for layout checks; its window can't go narrower than ~500 px, so 390 px screenshots look cropped. Dev-only `#listen-demo` hash shows sample cards.
 
+### Field notes (2026-10-20, Android + laptop)
+
+- Share sheet works as hoped (prompt → assistant apps).
+- Longer single-frame messages decode fine even with deliberate noise and talking over them.
+
+## Dual-band spike (2026-10-20): audible + ultrasound at the same time
+
+`npx tsx spike/dual-band.ts`. Audible-fast and ultrasound-fast occupy disjoint bands (1.9–6.4 kHz vs 15–19.5 kHz), so two transmissions can be summed into one waveform.
+
+- `rxToggleProtocol` is global but **captured per instance at `init`**, so we can create one audible-only and one ultrasound-only decoder. On a clean mix each decodes its own frame. A single all-protocol decoder only gets one of the two.
+- Living room model, 64 B per band, same *total* transmit power (each band at −3 dB), 30 trials:
+
+  | SNR | audible alone | ultra alone | dual: audible | dual: ultra | dual goodput vs best single |
+  |---|---|---|---|---|---|
+  | 10 | 100% | 100% | 100% | 100% | 2.00× |
+  | 0 | 100% | 100% | 97% | 100% | 1.97× |
+  | −5 | 87% | 100% | 70% | 100% | 1.70× |
+  | −10 | 30% | 87% | 3% | 80% | 0.96× |
+
+- Conclusion: ~2× throughput in ordinary conditions, breaking even only when it's very noisy. Pairs naturally with fountain coding (each band carries different blocks; the receiver doesn't care which band a block came from). Receivers should always run both decoders.
+- Not modeled: speaker nonlinearity / intermodulation when playing both bands loudly. **Real-phone test needed.**
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)

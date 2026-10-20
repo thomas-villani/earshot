@@ -128,21 +128,24 @@ let pending: Uint8Array[] | null = null;
 let meterGen = 0;
 
 async function updateMeter(): Promise<void> {
+  // Only touch the UI once the result is known, so the button doesn't flicker on every keystroke.
   const gen = ++meterGen;
   const modem = await modemReady;
   const result = form.read();
-  pending = null;
-  sendBtn.disabled = true;
-  if ('error' in result) {
-    detectedEl.textContent = result.error;
+  const bytes = 'error' in result ? null : await encodeMessage(result.message);
+  if (gen !== meterGen) return; // superseded by a newer keystroke
+  if (!bytes || 'error' in result) {
+    pending = null;
+    sendBtn.disabled = true;
+    detectedEl.textContent = 'error' in result ? result.error : '';
     sizeEl.textContent = '';
     return;
   }
-  const bytes = await encodeMessage(result.message);
-  if (gen !== meterGen) return; // superseded by a newer keystroke
   detectedEl.textContent = result.detected ? `Detected: ${result.detected}` : '';
   const max = maxSingleMessageBytes(modem.maxFrameBytes);
   if (bytes.length > max) {
+    pending = null;
+    sendBtn.disabled = true;
     sizeEl.replaceChildren(h('span', { class: 'over' }, `${bytes.length} / ${max} bytes, too long for now`));
     return;
   }

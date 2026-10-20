@@ -1,4 +1,5 @@
 declare module 'ggwave' {
-  const factory: () => Promise<any>;
+  /** Emscripten module factory; accepts Module overrides such as { print, printErr }. */
+  const factory: (overrides?: Record<string, unknown>) => Promise<any>;
   export default factory;
 }
