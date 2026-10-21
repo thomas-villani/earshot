@@ -2,7 +2,7 @@
 //
 //   npx tsx tools/train-compressor.ts [--vocab 4096] [--sweep]
 //
-// Inputs (downloaded into data/, git-ignored; see NOTES.md for sources and licenses):
+// Inputs (downloaded into data/, git-ignored; see README.md for sources, THIRD_PARTY_NOTICES.md for licenses):
 //   data/gpt2/vocab.bpe                 GPT-2 BPE merges (OpenAI, modified MIT): candidate tokens in rough frequency order
 //   data/tatoeba/eng_sentences.tsv      Tatoeba English sentences (CC-BY 2.0 FR): everyday short text
 //   data/gutenberg/pg1661.txt           Project Gutenberg (public domain): longer prose

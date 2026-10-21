@@ -208,6 +208,7 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - [ ] Prompt card "Send to assistant…": share sheet lists Claude/Gemini/etc. and they receive the text
 - [ ] Repeated message bumps "heard N×" instead of adding a card
 - [ ] Phone → phone: dual fast vs audible-fast on a ~400 B message (expect ~2× faster); listen for distortion when both bands play loudly
+- [x] Phone → phone (Android ↔ Android), dual fast, with compression on: short and long messages delivered every time, and a ~500-character message took ~30 s. A cat reliably notices the ultrasound band.
 - [ ] Late joiner: start Broadcast, begin listening ~20 s later, still decodes
 - [ ] Three listeners (laptop + 2 phones) receive one ~500 B broadcast (v1 "done" criterion)
 - [ ] Screen Wake Lock keeps a broadcast going on Android
