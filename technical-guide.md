@@ -147,7 +147,8 @@ A message is what a frame (or a fountain-coded block stream) carries:
 | WIFI | `0x04` | `auth␞ssid␞password[␞1]`, auth = `W` (WPA), `E` (WEP) or `N` (open); a trailing `1` means hidden |
 | ASSISTANT_PROMPT | `0x05` | `prompt[␞context]` |
 | RTC_OFFER / RTC_ANSWER | `0x10` / `0x11` | reserved for v2 |
-| GAME_INVITE | `0x20` | reserved for v3 |
+| VISUAL_DONE | `0x12` | reserved for v3 |
+| GAME_INVITE | `0x20` | reserved for v4 |
 
 `␞` is byte `0x1E`, the ASCII "record separator". It almost never appears in real text, which makes it a cheaper field separator than JSON or the `WIFI:T:…;S:…;` QR syntax. Any `0x1E` inside a value is replaced with a space before packing, and **trailing empty fields are dropped**, so a contact with only a name is just the name. Packing alone saves a lot: an earlier JSON contact like `{"n":"…","p":"…"}` spends a dozen bytes on punctuation and keys.
 
@@ -466,4 +467,4 @@ At ggwave's tens of bytes per second, sound is fine for messages but hopeless fo
 
 WebRTC can connect two browsers directly, but first each side needs the other's connection details (ICE credentials, a DTLS certificate fingerprint and network candidates), which a signaling server normally relays. In v2, those details are stripped from the multi-kilobyte SDP down to a compact binary form of about 90–130 bytes, which is one or two frames. The sender chirps an offer, the receiver taps Accept and chirps an answer, and the browsers then open a peer-to-peer data channel and transfer the file at Wi-Fi speeds, with a SHA-256 check at the end. Both screens show a 4-digit code derived from the two fingerprints, so users can confirm that nobody else in earshot slipped in their own answer. Public STUN servers are the only network dependency; there is still no backend.
 
-The v3 idea takes that same connection and uses it as a nearby multiplayer game transport. SPEC.md also leaves open a longer-term question: whether a custom modem (for example OFDM in an AudioWorklet) could push sound itself well past ggwave's speed.
+v2 only works when the two devices can reach each other over a network. v3 covers the other case: the sender's screen plays a stream of QR codes, the receiver's camera reads them, and the same fountain code from section 6 means it doesn't matter which frames are caught. A short chirp tells the sender when the receiver is done. Files need more than 255 blocks, so they are split into independently decoded "generations" of up to 255 blocks each. A later idea (v4) uses the v2 connection as a nearby multiplayer game transport. SPEC.md also leaves open a longer-term question: whether a custom modem (for example OFDM in an AudioWorklet) could push sound itself well past ggwave's speed.

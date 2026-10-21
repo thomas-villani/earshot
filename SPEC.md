@@ -8,7 +8,8 @@ A single static web page that turns any phone's speaker and microphone into a sh
 
 - **v1 — Acoustic messaging.** Send short messages (text, links, contact cards, Wi-Fi credentials, assistant prompts) purely over sound. One sender, any number of listeners. Fully offline after the page loads.
 - **v2 — Acoustic-signaled WebRTC.** Use sound only for the WebRTC handshake (offer/answer), then move files over a direct peer-to-peer data channel at Wi-Fi speeds. Still no signaling server.
-- **v3 (idea) — Nearby multiplayer.** The v2 connection becomes a game transport: walk up, chirp, play.
+- **v3 — Visual transfer.** Stream a file as animated codes on one screen, read by the other phone's camera. No network at all, so it works where v2 can't (different networks, no Wi-Fi). It reuses the fountain code.
+- **v4 (idea) — Nearby multiplayer.** The v2 connection becomes a game transport: walk up, chirp, play.
 
 Same pattern as Samsung Smart Switch (high-frequency audio for the handshake, Wi-Fi Direct for the data), but built entirely on standard browser APIs so it works across Android and iOS.
 
@@ -93,7 +94,8 @@ flags low nibble: codec. 0 = none, 1 = deflate-raw (CompressionStream), 2 = text
 | ASSISTANT_PROMPT | 0x05 | `prompt[␞context]` | Show + Copy (never auto-execute) |
 | RTC_OFFER | 0x10 | v2 — see below | handled by rtc/ |
 | RTC_ANSWER | 0x11 | v2 | handled by rtc/ |
-| GAME_INVITE | 0x20 | v3 reserved | — |
+| VISUAL_DONE | 0x12 | v3: `[fileId: u32]` | sender stops its code stream |
+| GAME_INVITE | 0x20 | v4 reserved | — |
 
 The sender tries every codec and keeps the smallest (raw wins for tiny or random payloads).
 
@@ -244,7 +246,101 @@ v2 is **one-to-one** per handshake. To send to another device, the sender starts
 
 ---
 
-## v3 sketch — Nearby multiplayer
+## v3 — Visual Transfer (Animated Codes)
+
+### Idea
+
+The sender's screen plays a rapid sequence of 2D barcodes. Each one carries a fountain-coded block of the file. The receiver points its camera at the screen and collects blocks until it can decode. Because the data is fountain coded, missed frames, blur, and starting late don't matter, just as with a late joiner over sound.
+
+This is the fallback for the document-sharing case when v2 can't connect. That covers two phones on different cellular networks, no Wi-Fi, guest networks with client isolation, and airplane mode. It is one-way and needs no network after the page loads. Sound stays useful alongside it (see *Using sound with it*).
+
+### Choosing a code
+
+The real limit isn't camera resolution. These are the limits that matter:
+- **Motion blur and focus.** Phones are handheld and the screen is close. Small modules blur first.
+- **Display and camera timing.** Browser camera streams run at about 30 fps, and phone screens refresh at 60–120 Hz. A rolling shutter can catch half of one code and half of the next. Each code needs to stay up for at least 2–3 camera frames, so the practical ceiling is about 10–15 codes per second.
+- **Decode time.** Decoding a large QR code in JS or WASM takes several to tens of milliseconds on a phone. That time competes with the frame budget.
+- **Screen artifacts.** Moiré, glare, and auto-brightness all interfere.
+
+QR binary capacity (approximate) at error-correction level L (~7% recovery) vs M (~15%):
+
+| Version | Modules | L | M |
+|---|---|---|---|
+| 10 | 57×57 | ~270 B | ~210 B |
+| 20 | 97×97 | ~860 B | ~670 B |
+| 25 | 117×117 | ~1,270 B | ~1,000 B |
+| 40 | 177×177 | ~2,950 B | ~2,330 B |
+
+**Use level L.** The fountain code already handles lost frames. A QR code either decodes or it doesn't, so heavy in-symbol error correction mostly wastes capacity. This mirrors the block-size result over sound: a frame that is lost costs little, so pack each frame full.
+
+**Starting point:** QR at L, with the version and frame rate chosen by measurement. A guess of v20–25 at 8–12 codes/s gives about 7–15 KB/s, so a 1 MB PDF takes roughly 1–2 minutes. Faster speeds come from tuning, not from bigger codes.
+
+**Denser codes, later, if QR tops out:**
+- **Color.** Three color channels could in principle carry about 3× the data. Examples are JAB Code (an ISO-standardized color barcode) and libcimbar, which uses colored symbols and claims far higher throughput than QR. The cost is sensitivity to white balance and screen color. It would be a v3.x experiment kept behind the same interface.
+- **Custom grid.** A plain black-and-white grid with our own finder pattern and no QR overhead. We would control density and redundancy directly. This is the visual counterpart to "write a custom OFDM modem".
+
+### Architecture
+
+The fountain and framing layers don't change. "Binary in, binary out" pays off here. A `Symbology` interface sits beside `Modem`:
+
+```ts
+interface Symbology {
+  readonly maxFrameBytes: number;
+  render(frame: Uint8Array, canvas: HTMLCanvasElement): void;
+  decode(image: ImageBitmap | ImageData): Promise<Uint8Array[]>;
+}
+```
+
+- **Rendering:** a small QR encoder to canvas, run at full brightness with a white quiet zone. The screen stays awake via Wake Lock.
+- **Decoding:** `BarcodeDetector` where available (Chrome on Android), with a QR decoder fallback for other browsers. That fallback may be the first new runtime dependency besides ggwave, so pick it carefully: small, maintained, and permissively licensed.
+- **Capture:** `getUserMedia({video: {facingMode: 'environment', width: {ideal: 1920}}})`. Decode frames from a `<video>` via `requestVideoFrameCallback`. Skip frames while a decode is still running instead of queueing them.
+
+### Packets for files
+
+Files need far more blocks than the 255 a u8 `k` allows. For example, 1 MB at about 1,000 B per block is about 1,000 blocks. One giant random linear system is O(k²·B) work, which is too slow in JS at that size. Instead, split the file into **generations** of up to 255 blocks. Each generation is decoded independently with the existing `FountainDecoder`.
+
+```
+Visual frame (inside a 6-byte frame header, new kind = File):
+  [fileId: u32]      random per transfer
+  [gen: u16]         generation index
+  [genCount: u16]
+  [k: u8]            blocks in this generation
+  [seed: u16]
+  [block]
+```
+
+- The sender rotates through the unfinished generations: systematic blocks first, then repair blocks.
+- **Metadata frame:** `{name, size, mime, sha256}` in a packed binary form, repeated every ~20 frames. A late joiner learns the file name and size quickly.
+- The receiver shows a per-generation progress grid, checks the SHA-256 of the full file, then offers Download or Share. Nothing opens automatically.
+- Size cap: a generous limit (e.g. 10 MB), enforced from the metadata before allocating any memory.
+
+### Using sound with it
+
+- **Done signal:** when the receiver finishes, it chirps a short `VISUAL_DONE {fileId}` message. The sender stops and shows "Received ✓". This needs no network and no back-and-forth over the camera.
+- **Rate hint (stretch):** the receiver chirps its decode success rate now and then, so the sender can slow down or switch to a smaller code version.
+- **Same UI as v2:** if a WebRTC connection works, use it. If not, offer "Show as code" with one tap. The QR handshake from v2 milestone 2 uses the same renderer and decoder.
+
+### v3 risks to test early
+
+- The real decode rate and success rate of `BarcodeDetector` per code version on mid-range Android phones. This is the number that decides everything.
+- The decoder fallback on iOS Safari (no `BarcodeDetector`) and its CPU cost.
+- Screen refresh vs camera exposure (tearing and rolling shutter). Hold each code for N display frames.
+- Glare and auto-exposure. A dark border around a bright code may help.
+- Memory for large files on phones. Keep generations as `Uint8Array`s and assemble the file once at the end via `Blob`.
+
+### v3 milestones
+
+1. **Bench page:** render QR codes at versions 10–40, levels L and M, and 5–20 fps. A second phone reports decode success rate and decode time. Record the results in NOTES.md and pick the defaults from them.
+2. **Generations:** multi-generation fountain with metadata frames, unit-tested end to end with simulated frame loss (no camera).
+3. **Screen → camera transfer** of a file, with progress, SHA-256 check, and Download/Share.
+4. **Sound done signal,** plus integration into the v2 send flow as the fallback.
+5. **Stretch:** adaptive rate; a color or custom-grid experiment behind `Symbology`.
+
+**Done when (target):** a 1 MB PDF moves from Android to Android with no network in under 2 minutes, holding the phone casually.
+
+---
+
+## v4 sketch — Nearby multiplayer
 
 Once a data channel exists, it's a game transport:
 - **Host-as-hub star topology:** host chirps an offer per joining player (or uses the first connection to broker the rest).
@@ -290,4 +386,5 @@ earshot/
 
 - Name (Earshot? something else?).
 - Audible vs. ultrasonic default — audible is more reliable and makes transfers obvious; ultrasonic is magic when it works. Measure before deciding.
+- v3: is QR enough, or does a color/custom grid code pay for its fragility? Decide from the milestone-1 bench numbers.
 - Worth writing a custom faster modem (OFDM in an AudioWorklet) once v1 works? ggwave tops out around 34 B/s; a custom modem might reach hundreds of B/s to a few kB/s in good conditions.
