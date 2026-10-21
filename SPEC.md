@@ -294,6 +294,7 @@ interface Symbology {
 ```
 
 - **Rendering:** a small QR encoder to canvas, run at full brightness with a white quiet zone. The screen stays awake via Wake Lock.
+- **Slow sender, greedy receiver.** The sender changes codes well below the camera's frame rate. Start at about 10 codes/s, so each code stays up for about 3 camera frames at 30 fps, and at least one capture of each code is clean rather than a half-and-half blend. Codes swap only on `requestAnimationFrame`, so a single display refresh never shows two codes, and each code is held for a whole number of refreshes. The receiver still captures every camera frame: extra frames are extra chances, the duplicate filter drops repeats, and blended frames fail to decode harmlessly. The codes-per-second setting is tuned in the milestone-1 bench.
 - **Decoding:** `BarcodeDetector` where available (Chrome on Android), with a QR decoder fallback for other browsers. That fallback may be the first new runtime dependency besides ggwave, so pick it carefully: small, maintained, and permissively licensed.
 - **Capture is separate from decoding.** Decoding only has to catch up eventually, not keep pace with the camera:
   1. `getUserMedia({video: {facingMode: 'environment', width: {ideal: 1920}}})`. Grab every frame via `requestVideoFrameCallback`.
