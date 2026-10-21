@@ -1,15 +1,17 @@
 # Earshot — Data over Sound in the Browser
 
-*Working name. Send a message to every phone within earshot — no app, no install, no server.*
+*Send things to people within earshot — no app, no install, no server.*
 
 ## Concept
 
-A single static web page that turns any phone's speaker and microphone into a short-range data link.
+A single static web page for moving data between nearby devices without any server. It uses whatever channel works: sound for messages and handshakes, a direct WebRTC link for files on a shared network, and the screen plus camera for files when there is no shared network. Sound is always how two devices find each other, hence the name.
 
 - **v1 — Acoustic messaging.** Send short messages (text, links, contact cards, Wi-Fi credentials, assistant prompts) purely over sound. One sender, any number of listeners. Fully offline after the page loads.
 - **v2 — Acoustic-signaled WebRTC.** Use sound only for the WebRTC handshake (offer/answer), then move files over a direct peer-to-peer data channel at Wi-Fi speeds. Still no signaling server.
 - **v3 — Visual transfer.** Stream a file as animated codes on one screen, read by the other phone's camera. No network at all, so it works where v2 can't (different networks, no Wi-Fi). It reuses the fountain code.
 - **v4 (idea) — Nearby multiplayer.** The v2 connection becomes a game transport: walk up, chirp, play.
+
+**Choosing a channel for a file (v2 + v3):** try WebRTC first (same Wi-Fi or a phone hotspot: MB/s). If it can't connect, offer "Show as code" (screen → camera: tens of KB/s, no network). Short messages always go over sound.
 
 Same pattern as Samsung Smart Switch (high-frequency audio for the handshake, Wi-Fi Direct for the data), but built entirely on standard browser APIs so it works across Android and iOS.
 
@@ -259,7 +261,7 @@ This is the fallback for the document-sharing case when v2 can't connect. That c
 The real limit isn't camera resolution. These are the limits that matter:
 - **Motion blur and focus.** Phones are handheld and the screen is close. Small modules blur first.
 - **Display and camera timing.** Browser camera streams run at about 30 fps, and phone screens refresh at 60–120 Hz. A rolling shutter can catch half of one code and half of the next. Each code needs to stay up for at least 2–3 camera frames, so the practical ceiling is about 10–15 codes per second.
-- **Decode time.** Decoding a large QR code in JS or WASM takes several to tens of milliseconds on a phone. That time competes with the frame budget.
+- **Decode time.** Decoding a large QR code in JS or WASM takes several to tens of milliseconds on a phone. Decoding runs in a buffered worker pool (see *Architecture*), so it limits latency more than throughput. It still sets how large a code a mid-range phone can keep up with.
 - **Screen artifacts.** Moiré, glare, and auto-brightness all interfere.
 
 QR binary capacity (approximate) at error-correction level L (~7% recovery) vs M (~15%):
@@ -293,7 +295,14 @@ interface Symbology {
 
 - **Rendering:** a small QR encoder to canvas, run at full brightness with a white quiet zone. The screen stays awake via Wake Lock.
 - **Decoding:** `BarcodeDetector` where available (Chrome on Android), with a QR decoder fallback for other browsers. That fallback may be the first new runtime dependency besides ggwave, so pick it carefully: small, maintained, and permissively licensed.
-- **Capture:** `getUserMedia({video: {facingMode: 'environment', width: {ideal: 1920}}})`. Decode frames from a `<video>` via `requestVideoFrameCallback`. Skip frames while a decode is still running instead of queueing them.
+- **Capture is separate from decoding.** Decoding only has to catch up eventually, not keep pace with the camera:
+  1. `getUserMedia({video: {facingMode: 'environment', width: {ideal: 1920}}})`. Grab every frame via `requestVideoFrameCallback`.
+  2. **Shrink before stashing.** Raw 1080p RGBA is about 8 MB per frame, so stashing it is not an option. Convert to grayscale (1 byte per pixel) and crop to the code's last known position with some margin. Before the first decode, use a centered square. The result is well under 1 MB per frame.
+  3. **Drop near-duplicates.** Each code stays up for 2–3 camera frames. A cheap downsampled pixel difference skips frames that are almost identical to the previous one.
+  4. **Bounded ring buffer → worker pool.** Transfer the buffers to 2–4 dedicated workers (`BarcodeDetector` is available in workers), which decode in parallel. When the buffer is full, drop the oldest frames. The fountain code doesn't care which frames are lost.
+  5. Decoded frames go back to the main thread and into the generation decoders. The transfer finishes when the backlog drains, which may be a moment after the last useful frame was captured.
+
+  This makes the camera's frame rate the receive ceiling, not decode speed on one core. The milestone-1 bench should measure both paths, inline decode and the buffered pool.
 
 ### Packets for files
 

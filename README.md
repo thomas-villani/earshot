@@ -153,7 +153,7 @@ NOTES.md                measured numbers, device findings, manual test checklist
 
 ## Roadmap
 
-v1 (acoustic messaging) is built: typed messages, framing, fountain coding, broadcast, dual band and compression. What's next, per [SPEC.md](SPEC.md):
+v1 (acoustic messaging) is built: typed messages, framing, fountain coding, broadcast, dual band and compression. The longer-term goal is a general way to send things to nearby people with no server. Sound handles messages and lets devices find each other, and files take the fastest path that works. What's next, per [SPEC.md](SPEC.md):
 
 - **v2: file transfer over WebRTC.** Sound is used only for the handshake. The sender chirps a compacted WebRTC offer (about 90–130 bytes), the receiver chirps back an answer, and the two browsers then open a direct peer-to-peer data channel and move files at Wi-Fi speeds. Both screens show a short verification code so you can confirm you're connected to the right device. There is still no signaling server; public STUN servers are the only network dependency.
 - **v3: visual transfer.** Stream a file as animated QR codes on one screen and read it with the other phone's camera. It needs no network, so it works when the two phones aren't on the same Wi-Fi. It uses the same fountain coding as long messages, and a chirp tells the sender when the receiver is done.
