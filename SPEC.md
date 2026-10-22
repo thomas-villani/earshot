@@ -397,4 +397,35 @@ earshot/
 - Name (Earshot? something else?).
 - Audible vs. ultrasonic default — audible is more reliable and makes transfers obvious; ultrasonic is magic when it works. Measure before deciding.
 - v3: is QR enough, or does a color/custom grid code pay for its fragility? Decide from the milestone-1 bench numbers.
-- Worth writing a custom faster modem (OFDM in an AudioWorklet) once v1 works? ggwave tops out around 34 B/s; a custom modem might reach hundreds of B/s to a few kB/s in good conditions.
+- A custom modem: see *Experiments*.
+
+---
+
+## Experiments (curiosities, not on the app roadmap)
+
+Things worth trying for the fun of it, or as a last-resort fallback. Each one plugs in behind the existing `Modem` interface, so nothing above it changes. Each one gets evaluated with the channel simulator first.
+
+### OFDM modem
+
+**How ggwave works today:** multi-tone FSK. Each 4-bit nibble selects 1 of 16 tones spaced 46.875 Hz apart (one FFT bin at 48 kHz / 1024). Six nibbles sound at once as 6 tones over 96 bins, which is 4.5 kHz. The symbol duration is 192/128/64 ms for Normal/Fast/Fastest. Reed–Solomon adds about 40%. Fast nets about 15 B/s. The design is deliberately wasteful: only 1 bin in 16 carries energy, and symbols are long so echoes can die out.
+
+**The ceiling:** Shannon's limit for about 10 kHz of usable phone bandwidth at about 30 dB SNR is about 100 kbit/s. Reverb, not noise, is the practical limit: intersymbol interference and frequency-selective fading.
+
+**The design:** OFDM with every bin carrying data. Use QPSK to start, and adapt the modulation per bin later. A cyclic prefix absorbs early echoes. Pilot tones drive channel estimation and equalization. Add sample-clock drift tracking, a convolutional or LDPC code with frequency interleaving, and a chirp preamble for synchronization.
+
+**Rough budget for 2–8 kHz:** 128 bins × 2 bits per symbol over a symbol of about 31 ms (21.3 ms + 10 ms prefix) gives about 8 kbit/s raw. After pilots and a rate-½ code, that's **about 400–500 B/s, roughly 30× ggwave Fast**. Ultrasound adds more on top. These are estimates to check in the simulator.
+
+**Where it would help:** handshake latency (about 7 s → under 1 s for about 100 B), and a fallback for when WebRTC and the camera both fail.
+
+### Melody encoding ("musical steganography")
+
+Make the transmission sound like a pleasant tune instead of a chirp.
+
+- **Basic version:** pick notes from a pentatonic scale, where any sequence sounds consonant. For example, 16 notes over about 3 octaves carry 4 bits per note. Rhythm, such as note duration chosen from a few values, can carry more bits. Decode by tracking the fundamental frequency with an FFT, using harmonic summing so a richer timbre (a synth voice with overtones) still decodes. At about 6–8 notes/s, expect about 3–4 B/s. It is slow, but charming.
+- **Clever version:** reuse the arithmetic coder *in reverse*. Feed the message bits to an arithmetic **decoder** driven by a melody model, such as a Markov model of note-to-note intervals trained on folk tunes. The output is a melody that the model considers likely, so it *sounds like music*. The receiver transcribes the notes and runs the arithmetic **encoder** to recover the bits. This is the trick behind language-model steganography, applied to tunes. The cost: less entropy per note, so even slower.
+- **Hard parts:** reverb smears legato notes, so use short plucky envelopes with gaps. Octave errors in pitch tracking are another problem. Use the fountain code plus CRCs as-is. A melody only needs to be unambiguous to the decoder, not to people.
+
+### Others
+
+- Adaptive bit loading per bin, measured from a training preamble (DSL style).
+- Color or custom-grid visual codes (see v3).
