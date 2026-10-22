@@ -189,6 +189,18 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
   Overall 3354 → 1721 bytes (**49% smaller**). URLs gain least because of random IDs.
 - Ideas not yet tried: an order-1 context (previous-token class) model; a URL-specific sub-model.
 
+## v1 polish: PWA, logo, demo GIF (2026-10-21)
+
+- **Logo:** `public/icons/icon.svg`: a speaker, a wave and a microphone on the accent purple, meaning one device's sound reaches another's mic. Earlier drafts were dropped: a dot with arcs read as a sideways Wi-Fi symbol, a speaker with arcs as a volume control, and upward arcs as Wi-Fi itself. The maskable variant is full-bleed with the art scaled to 88%, so it sits well inside the 40% safe circle. PNGs (192, 512, maskable 512, 180 apple-touch) were rasterized with ImageMagick.
+- **Manifest + service worker:** `public/manifest.webmanifest` (standalone, portrait). `sw.js` is generated at build time by a small plugin in `vite.config.ts`, which writes the bundle's file list into it, so it needs no dependency. It precaches the bundle on install, including the lazily loaded compression model chunk. Navigations are network-first, so a new deploy shows up on the next online visit. Hashed assets are cache-first. The cache name is a hash of the file list, so each deploy replaces the old cache.
+- **Verified in headless Edge over CDP:** no manifest or installability errors, 12 files cached, and the page reloads with the network off and is controlled by the worker. Compression still works offline (the meter shows the 12-byte compressed size), so the model chunk is coming from the cache.
+- **Demo GIF (`docs/demo.gif`, about 400 KB)** is a real decode, not a mockup:
+  - A Node script renders the actual Dual Fast transmission to a WAV.
+  - A headless Edge receiver hears that WAV through Chromium's fake microphone (`--use-fake-device-for-media-stream --use-file-for-fake-audio-capture=msg.wav%noloop`) and decodes it.
+  - A second Edge instance types the text and presses Send.
+  - Both are screenshotted over CDP at about 9 fps, composited side by side, and encoded with ffmpeg.
+  - Quirk: under screenshot load, the fake mic's audio arrived 3–4.5 s later than the wall clock predicted (it varied between runs). The two streams were therefore aligned afterward on the frame where the receiver's spectrogram lights up.
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
@@ -212,6 +224,8 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - [ ] Late joiner: start Broadcast, begin listening ~20 s later, still decodes
 - [ ] Three listeners (laptop + 2 phones) receive one ~500 B broadcast (v1 "done" criterion)
 - [ ] Screen Wake Lock keeps a broadcast going on Android
+- [ ] Install to the home screen on Android (Chrome menu → Install app): icon looks right, the app opens standalone, and it still opens and sends in airplane mode
+- [ ] Mic permission persists for the installed app (or re-prompts once)
 - [x] URL timing: 40 B on audible-normal felt like ~4–6 s by hand, consistent with 4.4 s airtime. No hidden device latency.
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)

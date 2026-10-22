@@ -1,3 +1,5 @@
+<img src="public/icons/icon.svg" alt="" width="72" height="72" align="right" />
+
 # Earshot
 
 **Send a message to every phone within earshot, using sound. No app, no install, no server.**
@@ -5,6 +7,12 @@
 Try it: **https://thomas-villani.github.io/earshot/**
 
 Open the page on two devices, type something on one, press **Send**, and press **Start listening** on the other. The message travels through the air as a short burst of tones and shows up as a card on the receiving screen.
+
+![Phone A types a message and presses Send; Phone B's spectrogram lights up with tones in both bands and the message appears as a card](docs/demo.gif)
+
+<sub>A real decode, recorded in headless Edge: the receiver hears the actual transmission through a simulated microphone (see [NOTES.md](NOTES.md)).</sub>
+
+**Install it (optional).** Earshot is a Progressive Web App (PWA). In Chrome on Android, use the menu → *Install app* (or *Add to Home screen*) to get an icon that opens full screen. After your first visit it works offline, including in airplane mode, since sound needs no network.
 
 ## What you can send
 
@@ -136,6 +144,9 @@ Every push to `main` triggers `.github/workflows/deploy.yml`, which runs the tes
 
 ```
 index.html              page shell (Send / Listen tabs, settings drawer)
+vite.config.ts          build config, including the plugin that generates the offline service worker
+public/                 web manifest and icons (logo source: public/icons/icon.svg)
+docs/                   demo GIF
 src/
   main.ts               app wiring: modes, send/broadcast loop, listen loop
   modem/                Modem interface + ggwave adapter (the only code that touches ggwave)
@@ -159,7 +170,7 @@ v1 (acoustic messaging) is built: typed messages, framing, fountain coding, broa
 - **v3: visual transfer.** Stream a file as animated QR codes on one screen and read it with the other phone's camera. It needs no network, so it works when the two phones aren't on the same Wi-Fi. It uses the same fountain coding as long messages, and a chirp tells the sender when the receiver is done.
 - **v4 (idea): nearby multiplayer.** The v2 connection becomes a game transport: walk up, chirp, play.
 
-Remaining v1 polish includes a PWA manifest and finishing the real-device checklist, especially on iOS.
+What remains for v1 is finishing the real-device checklist, especially on iOS.
 
 ## Credits
 

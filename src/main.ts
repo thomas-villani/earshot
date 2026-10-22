@@ -331,6 +331,11 @@ async function handleFrame(raw: Uint8Array): Promise<void> {
 void updateMeter();
 showTab(location.hash.startsWith('#listen') ? 'listen' : 'send');
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  // offline after first visit; see the sw plugin in vite.config.ts
+  void navigator.serviceWorker.register('./sw.js');
+}
+
 if (import.meta.env.DEV && location.hash.includes('demo')) {
   // dev-only: sample cards for UI work without needing a second device
   void import('./ui/demo').then(({ demoMessages }) => {

@@ -55,6 +55,13 @@ h1 {
   font-size: 1.4rem;
   margin: 0;
   letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo {
+  border-radius: 7px;
 }
 
 .tabs {
