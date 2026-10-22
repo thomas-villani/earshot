@@ -196,20 +196,25 @@ WebRTC needs signaling: each side's ICE credentials, DTLS fingerprint, and candi
 Full SDP is KBs; the parts that matter for a data-channel-only session are small. Wait for ICE gathering to complete (non-trickle), extract fields, binary-pack them, and rebuild a full SDP from a fixed template on the other side.
 
 ```
-RTC_OFFER / RTC_ANSWER payload:
+RTC_OFFER / RTC_ANSWER payload (src/rtc/sdp-compact.ts):
+  [ver/setup: u8]             high nibble version (1); low nibble setup: 0 actpass, 1 active, 2 passive
   [sessionId: u32]            offer picks it; answer echoes it
-  [ufrag: len-prefixed ascii] typically 4 chars
-  [pwd: len-prefixed ascii]   typically 22–24 chars
+  [ufrag: n u8][6-bit packed] ice-chars are exactly the base64 alphabet: 4 chars → 3 bytes
+  [pwd:   n u8][6-bit packed] 24 chars (Chrome) → 18 bytes; 32 (Firefox) → 24
   [fingerprint: 32 bytes]     SHA-256 DTLS fingerprint, binary
   [candCount: u8]
-  per candidate:
-    [kind: u8]                host-mDNS | host-ipv4 | srflx-ipv4 | (ipv6 later)
-    host-mDNS: [uuid: 16 bytes]   (Chrome/Safari obfuscate host IPs as <uuid>.local)
-    ipv4:      [ip: 4 bytes]
-    [port: u16]
+  per candidate: [kind: u8][address][port: u16]
+    kind 0 host-ipv4 (4 B) | 1 host-ipv6 (16 B) | 2 host-mDNS (<uuid>.local as 16 B)
+         3 srflx-ipv4 (4 B) | 4 srflx-ipv6 (16 B)
 ```
 
-Expected size ≈ 90–130 bytes → one frame, or two via fountain. Worth trying: the answer may omit candidates entirely, since the offerer learns the answerer's address as a peer-reflexive candidate from its incoming connectivity checks. Template constants (m-line, `a=sctp-port`, `a=setup`, etc.) live in code; the offer uses `setup:actpass`, the answer `setup:active`.
+The fixed part is 61 bytes (Chrome credentials). Candidates are chosen to fit a byte budget (default 132 B, one SINGLE frame): LAN IPv4 first, then public IPv4 (srflx), then IPv6 and mDNS in the browser's own order. UDP only: TCP, relay, and duplicates are dropped. Measured in the loopback lab: offer 120–125 B, answer 99–132 B with candidates, or **61 B with none**. The offerer then learns the answerer as a peer-reflexive candidate from its connectivity checks, which worked in every loopback run. Template constants (m-line, `a=sctp-port`, `a=mid:0`, etc.) live in `buildSdp`. Both sides open the same pre-negotiated data channel (`negotiated: true, id: 0`).
+
+**Raw IPs vs mDNS.** Without media permission, Chrome hides host addresses behind mDNS names (19 B each). Earshot always holds mic permission, so Chrome emits raw host addresses for every interface instead (7 B for IPv4). That is smaller, and it avoids mDNS resolution, which is the top v2 risk below. A public-IPv4-only offer (no host candidates) failed to connect on the same machine, because it needs the router to hairpin. Host candidates are essential on a shared LAN.
+
+**Privacy.** An offer chirps the sender's LAN and public IP addresses to everyone in earshot. A WebRTC peer learns them anyway, but here bystanders do too. The README must say so when file transfer ships.
+
+**Gathering** waits for completion, or until a srflx IPv4 candidate has arrived and 300 ms pass with no new candidate (3 s cap). With mic permission, STUN on dead interfaces (VM adapters, some IPv6) never answers, so plain "complete" took the full 3 s. Early settle measured 0.4–0.8 s.
 
 ### Handshake flow
 

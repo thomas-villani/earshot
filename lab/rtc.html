@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RTC lab</title>
+    <style>
+      body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 60rem; }
+      button { font: inherit; padding: 6px 12px; margin: 0 6px 6px 0; }
+      table { border-collapse: collapse; margin: 12px 0; }
+      td, th { border: 1px solid #ccc; padding: 4px 8px; text-align: left; vertical-align: top; }
+      pre { background: #f4f4f4; padding: 8px; overflow-x: auto; font-size: 12px; }
+      .ok { color: #1f9d55; } .bad { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <h1>RTC lab: in-page loopback via compact SDP</h1>
+    <p>Dev only (not in the build). Two peer connections in this page, connected only through the compact bytes. See SPEC.md v2 milestone 1.</p>
+    <button id="run">Run all scenarios</button>
+    <button id="mic">Grant mic (raw host IPs instead of mDNS)</button>
+    <table id="results"><thead><tr><th>scenario</th><th>offer B</th><th>answer B</th><th>gather ms (offer / answer)</th><th>connect ms</th><th>echo</th><th>path</th></tr></thead><tbody></tbody></table>
+    <h2>Last offer</h2>
+    <pre id="detail"></pre>
+    <script type="module" src="./rtc-lab.ts"></script>
+  </body>
+</html>

@@ -201,6 +201,27 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
   - Both are screenshotted over CDP at about 9 fps, composited side by side, and encoded with ffmpeg.
   - Quirk: under screenshot load, the fake mic's audio arrived 3–4.5 s later than the wall clock predicted (it varied between runs). The two streams were therefore aligned afterward on the frame where the receiver's spectrogram lights up.
 
+## v2 milestone 1: compact SDP + in-page loopback (2026-10-22)
+
+- `src/rtc/sdp-compact.ts` (parse, select, encode, decode, rebuild) and `src/rtc/peer.ts` (createOffer / acceptOffer / applyAnswer around the bytes). Lab page: `lab/rtc.html`, dev server only, not in the build.
+- Fixtures in `test/fixtures/sdp.ts` are real Edge captures with **all addresses replaced**: the raw capture contained the laptop's public IPv4 and IPv6.
+- **Mic permission changes the candidates.** Without it, Chrome gives mDNS names (`<uuid>.local`). With it, Chrome gives raw addresses for every interface (Wi-Fi, a WSL virtual adapter, 3 IPv6 addresses) plus TCP-active candidates on port 9, which are useless. That is why selection works to a byte budget instead of packing everything.
+- **Packing:** 6-bit ICE credentials save 7 B over ASCII. The fixed part is 61 B, so a 132 B frame leaves 71 B for candidates: 10 IPv4 or 3 IPv6/mDNS.
+- **Loopback results** (headless Edge, Windows, same machine; both sides only see each other's compact bytes):
+
+  | scenario | offer | answer | opens? | path |
+  |---|---|---|---|---|
+  | mDNS, both carry candidates | 125 B | 99 B | yes, ~3 ms after answer | host → host |
+  | mDNS, answer carries none | 125 B | 61 B | yes | host → prflx |
+  | mDNS, 80 B budget (srflx only) | 68 B | 68 B | **no** (10 s timeout) | needs NAT hairpin |
+  | mic, both carry candidates | 120 B | 132 B | yes | host → host |
+  | mic, answer carries none | 120 B | 61 B | yes | host → prflx |
+  | mic, 80 B budget (LAN IPv4 only) | 75 B | 75 B | yes | host → host |
+
+- **Gathering:** without mic, 130–490 ms. With mic, it always hit the 3 s cap, waiting on STUN from interfaces that can't reach it. It now settles 300 ms after the last candidate once a srflx IPv4 is in: 0.4–0.8 s.
+- **Open question for milestone 3:** should the answer carry candidates? With none it is 61 B (about half the airtime). But then the answerer is only reachable as peer-reflexive, which works on a shared LAN and is weaker across NATs. A middle ground is LAN IPv4 + srflx IPv4 (about 75 B). Decide with phone-to-phone numbers in milestone 2.
+- Not yet verified: Firefox and Safari accepting `buildSdp` output. The Firefox-style fixture only covers parsing. That is for milestone 2/5 on real devices.
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
@@ -229,3 +250,5 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - [x] URL timing: 40 B on audible-normal felt like ~4–6 s by hand, consistent with 4.4 s airtime. No hidden device latency.
 - [ ] iOS: ringer switch / silent mode effect on playback; `navigator.audioSession.type`
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)
+- [ ] v2: lab/rtc.html loopback on Android Chrome (dev server over LAN): all scenarios connect; note gather times with mic granted
+- [ ] v2: Safari and Firefox accept a remote description built by `buildSdp`
