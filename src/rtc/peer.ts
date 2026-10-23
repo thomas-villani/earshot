@@ -18,8 +18,13 @@ export interface GatherOptions {
   timeoutMs?: number;
   /** Byte budget for the compact blob (default: one frame). */
   maxBytes?: number;
-  /** Leave candidates out (the answerer can be found as peer-reflexive from its checks). */
+  /**
+   * Leave candidates out (the answerer can be found as peer-reflexive from its checks). Lab only:
+   * if the offerer is backgrounded for ~15 s the answerer stops checking and nothing recovers.
+   */
   omitCandidates?: boolean;
+  /** Override RTC_CONFIG (e.g. no STUN, for testing host-only paths). */
+  config?: RTCConfiguration;
 }
 
 export interface LocalSide {
@@ -77,7 +82,7 @@ async function finishLocal(pc: RTCPeerConnection, channel: RTCDataChannel, sessi
 /** Sender side: new connection, gathered offer, compacted. */
 export async function createOffer(sessionId: number, opts: GatherOptions = {}): Promise<LocalSide> {
   const t0 = performance.now();
-  const pc = new RTCPeerConnection(RTC_CONFIG);
+  const pc = new RTCPeerConnection(opts.config ?? RTC_CONFIG);
   const channel = pc.createDataChannel('earshot', CHANNEL);
   await pc.setLocalDescription(await pc.createOffer());
   return finishLocal(pc, channel, sessionId, opts, t0);
@@ -88,7 +93,7 @@ export async function acceptOffer(offerBytes: Uint8Array, opts: GatherOptions = 
   const offer = decodeCompactSdp(offerBytes);
   if (!offer || offer.setup !== 'actpass') return null;
   const t0 = performance.now();
-  const pc = new RTCPeerConnection(RTC_CONFIG);
+  const pc = new RTCPeerConnection(opts.config ?? RTC_CONFIG);
   const channel = pc.createDataChannel('earshot', CHANNEL);
   await pc.setRemoteDescription({ type: 'offer', sdp: buildSdp(offer) });
   await pc.setLocalDescription(await pc.createAnswer());

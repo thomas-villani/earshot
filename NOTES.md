@@ -219,8 +219,22 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
   | mic, 80 B budget (LAN IPv4 only) | 75 B | 75 B | yes | host → host |
 
 - **Gathering:** without mic, 130–490 ms. With mic, it always hit the 3 s cap, waiting on STUN from interfaces that can't reach it. It now settles 300 ms after the last candidate once a srflx IPv4 is in: 0.4–0.8 s.
-- **Open question for milestone 3:** should the answer carry candidates? With none it is 61 B (about half the airtime). But then the answerer is only reachable as peer-reflexive, which works on a shared LAN and is weaker across NATs. A middle ground is LAN IPv4 + srflx IPv4 (about 75 B). Decide with phone-to-phone numbers in milestone 2.
+- **Open question for milestone 3:** should the answer carry candidates? With none it is 61 B (about half the airtime). But then the answerer is only reachable as peer-reflexive, which works on a shared LAN and is weaker across NATs. A middle ground is LAN IPv4 + srflx IPv4 (about 75 B). Decide with phone-to-phone numbers in milestone 2. **Resolved in milestone 2: yes, the answer carries them.**
 - Not yet verified: Firefox and Safari accepting `buildSdp` output. The Firefox-style fixture only covers parsing. That is for milestone 2/5 on real devices.
+
+## v2 milestone 2: copy-paste pairing on real devices (2026-10-22)
+
+- `lab/pair.html` (dev server only): Phone A makes an offer, the text (`ES1O` + base64url) goes over any chat app, and Phone B pastes it and sends back an answer (`ES1A…`). It logs ICE and connection state, page visibility, the selected path, RTT, and an 8 MB throughput test. "Copy report" masks public addresses.
+- Tested: Android Chrome (Phone A) ↔ Windows Edge (Phone B), same Wi-Fi.
+- **Full answer (both carry candidates): connected every time.** Offer 113 B (LAN IPv4, srflx IPv4, 2 IPv6), answer 120 B. The selected path was **direct IPv6, host → host**: both devices have global IPv6 addresses on the home Wi-Fi.
+- **Answer without candidates (61 B): deadlocks if the paste is slow.** The phone sat in a chat app for 42 s. Edge started checks as soon as it made the answer, got no replies from the backgrounded phone, and reported `failed` after **15.1 s** (15.2 s in another run). The phone applied the answer 7 s after that, and nothing happened: it had no address to try, and Edge had stopped checking. In the headless 40 s late-paste test this worked only because a headless "phone" never goes to the background, so it kept answering the checks.
+- **The same stall with a full answer recovers:** Edge had also reported `failed`, and when the phone applied the answer, it went checking → connected → channel open in 0.1 s.
+- **Decision:** the answer carries candidates (≈75–132 B, still one frame). `omitCandidates` stays in `peer.ts` for the lab only.
+- **Backgrounding:** an Android page in the background stops answering ICE. The connection came back fine after 42 s hidden, but the other side reports `disconnected` within seconds and `failed` after ~15 s. Design: keep the page in the foreground during handshake and transfer, and reconnect on `visibilitychange`.
+- **ICE error 701** (STUN server unreachable) appears ~39.5 s after gathering starts, which is the end of the STUN retransmit schedule (0.5 + 1 + 2 + 4 + 8 + 16 + 8 s). It comes from interfaces with no route (the WSL adapter, some IPv6). Harmless: gathering settled 0.4 s in.
+- **Dev setup gotcha:** typing `192.168.1.21:5173` into Android Chrome uses plain http, and the HTTPS-only dev server drops it with ERR_EMPTY_RESPONSE. Type `https://` explicitly.
+- Laptop throughput: the WSL virtual adapter path gave 1.6 MB/s, IPv6 Wi-Fi gave 19.6 MB/s (headless, same machine). Phone throughput not yet recorded.
+- **Deferred to milestone 3** (easier once the handshake is by sound): phone ↔ phone, and one phone on mobile data.
 
 ## Manual test checklist (real devices)
 
@@ -252,3 +266,7 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - [ ] iOS: output volume/routing while mic is active (matters for the v2 offer/answer)
 - [ ] v2: lab/rtc.html loopback on Android Chrome (dev server over LAN): all scenarios connect; note gather times with mic granted
 - [ ] v2: Safari and Firefox accept a remote description built by `buildSdp`
+- [x] v2: copy-paste pairing, Android Chrome ↔ Windows Edge, same Wi-Fi (lab/pair.html): connects, direct IPv6
+- [ ] v2: pairing phone ↔ phone (Android ↔ Android), same Wi-Fi; record throughput
+- [ ] v2: pairing with one phone on mobile data (expected to fail on carrier NAT unless both sides have IPv6)
+- [ ] v2: reconnect after the page returns from the background

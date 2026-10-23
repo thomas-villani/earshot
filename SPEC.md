@@ -208,11 +208,15 @@ RTC_OFFER / RTC_ANSWER payload (src/rtc/sdp-compact.ts):
          3 srflx-ipv4 (4 B) | 4 srflx-ipv6 (16 B)
 ```
 
-The fixed part is 61 bytes (Chrome credentials). Candidates are chosen to fit a byte budget (default 132 B, one SINGLE frame): LAN IPv4 first, then public IPv4 (srflx), then IPv6 and mDNS in the browser's own order. UDP only: TCP, relay, and duplicates are dropped. Measured in the loopback lab: offer 120–125 B, answer 99–132 B with candidates, or **61 B with none**. The offerer then learns the answerer as a peer-reflexive candidate from its connectivity checks, which worked in every loopback run. Template constants (m-line, `a=sctp-port`, `a=mid:0`, etc.) live in `buildSdp`. Both sides open the same pre-negotiated data channel (`negotiated: true, id: 0`).
+The fixed part is 61 bytes (Chrome credentials). Candidates are chosen to fit a byte budget (default 132 B, one SINGLE frame): LAN IPv4 first, then public IPv4 (srflx), then IPv6 and mDNS in the browser's own order. UDP only: TCP, relay, and duplicates are dropped. Measured: offer 113–125 B, answer 99–132 B. **Both sides carry candidates.** An answer can be cut to 61 B by leaving them out (the offerer then learns the answerer as peer-reflexive from its checks), and that works in loopback, but on real devices it can deadlock, so it stays a lab option only. See "Answer carries candidates" below. Template constants (m-line, `a=sctp-port`, `a=mid:0`, etc.) live in `buildSdp`. Both sides open the same pre-negotiated data channel (`negotiated: true, id: 0`).
 
 **Raw IPs vs mDNS.** Without media permission, Chrome hides host addresses behind mDNS names (19 B each). Earshot always holds mic permission, so Chrome emits raw host addresses for every interface instead (7 B for IPv4). That is smaller, and it avoids mDNS resolution, which is the top v2 risk below. A public-IPv4-only offer (no host candidates) failed to connect on the same machine, because it needs the router to hairpin. Host candidates are essential on a shared LAN.
 
 **Privacy.** An offer chirps the sender's LAN and public IP addresses to everyone in earshot. A WebRTC peer learns them anyway, but here bystanders do too. The README must say so when file transfer ships.
+
+**Answer carries candidates.** Measured phone ↔ laptop in milestone 2. Without them, the answerer's connectivity checks are the only way the connection can form. Chrome gives up on unanswered checks after about 15 s and reports `failed`. A backgrounded Android page stops answering checks, so if the offerer is backgrounded for more than ~15 s before applying the answer, the answerer gives up first. The offerer has no address to try, and nothing recovers. With candidates, the offerer probes the answerer itself once it applies the answer, and the same situation connected within 0.1 s. The cost is about 60 B of airtime on the answer, still one frame.
+
+**Backgrounding.** Android Chrome stops answering ICE while the page is hidden. A connection survived 42 s in the background, but the other side reports `disconnected` after a few seconds and `failed` after about 15 s. The app keeps the page in the foreground during a handshake and transfer (with a "keep this page open" note), and reconnects when it becomes visible again.
 
 **Gathering** waits for completion, or until a srflx IPv4 candidate has arrived and 300 ms pass with no new candidate (3 s cap). With mic permission, STUN on dead interfaces (VM adapters, some IPv6) never answers, so plain "complete" took the full 3 s. Early settle measured 0.4–0.8 s.
 
@@ -244,7 +248,7 @@ v2 is **one-to-one** per handshake. To send to another device, the sender starts
 ### v2 milestones
 
 1. **Two-tab loopback:** compact/expand SDP round-trip, connect two `RTCPeerConnection`s in one page via the compact format (no sound).
-2. **Same-network pair via QR or copy-paste** of the compact blob (isolates WebRTC issues from acoustic ones).
+2. **Same-network pair via QR or copy-paste** of the compact blob (isolates WebRTC issues from acoustic ones). Done with copy-paste (`lab/pair.html`), phone ↔ laptop; QR comes with v3.
 3. **Acoustic handshake:** replace copy-paste with sound; add the verification code.
 4. **File transfer** with backpressure, hashing, progress.
 5. **Cross-platform matrix:** Android Chrome, iOS Safari, desktop Chrome/Firefox/Safari; same Wi-Fi vs. one-side-cellular.
