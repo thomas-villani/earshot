@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sound handshake lab</title>
+    <style>
+      body { font: 15px/1.45 system-ui, sans-serif; margin: 0 auto; padding: 12px 16px 48px; max-width: 40rem; background: #fff; color: #111; }
+      h1 { font-size: 1.25rem; }
+      button { font: inherit; padding: 10px 14px; margin: 4px 6px 4px 0; border-radius: 8px; border: 1px solid #bbb; background: #fff; }
+      button.primary { background: #5b3df5; color: #fff; border-color: #5b3df5; }
+      button:disabled { opacity: 0.5; }
+      label { display: block; margin: 6px 0; }
+      select, input[type='text'] { font: inherit; padding: 6px; }
+      input[type='text'] { width: 70%; box-sizing: border-box; }
+      section { border-top: 1px solid #ddd; margin-top: 16px; padding-top: 8px; }
+      canvas { width: 100%; height: 90px; background: #111; border-radius: 8px; display: block; margin: 8px 0; }
+      pre { background: #f4f4f4; padding: 8px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+      .status { font-weight: 600; min-height: 1.5em; }
+      .incoming { border: 2px solid #5b3df5; border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+      .code { font: 700 2.6rem/1.1 ui-monospace, monospace; letter-spacing: 0.2em; margin: 6px 0; }
+      #chat-log { background: #f4f2ff; min-height: 2em; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Earshot sound handshake lab (v2 milestone 3)</h1>
+    <p>Two phones connect over WebRTC, with the offer and answer sent by sound. Use the same mode on both. Keep this page open and the phones within a meter or two.</p>
+
+    <label>Mode <select id="mode"></select></label>
+    <label>Volume <output id="volume-out"></output> <input id="volume" type="range" min="5" max="100" step="5" value="50" /></label>
+
+    <section id="start-box">
+      <button class="primary" id="start">Start (allow the mic)</button>
+    </section>
+
+    <section id="main" hidden>
+      <canvas id="spectrogram"></canvas>
+      <p class="status" id="status" aria-live="polite">Listening…</p>
+      <button class="primary" id="offer">Connect to a nearby phone</button>
+      <button id="cancel" hidden>Stop</button>
+      <div id="incoming"></div>
+      <div id="code-box" hidden>
+        <p>Both phones should show the same code:</p>
+        <p class="code" id="code"></p>
+      </div>
+    </section>
+
+    <section id="connected" hidden>
+      <h2>Connected</h2>
+      <pre id="chat-log"></pre>
+      <form id="chat-form"><input type="text" id="chat-text" placeholder="Say something" autocomplete="off" /><button>Send</button></form>
+      <button id="throughput">Throughput test (8 MB)</button>
+    </section>
+
+    <section>
+      <button id="report-copy">Copy report</button>
+      <pre id="log"></pre>
+    </section>
+
+    <script type="module" src="./handshake.ts"></script>
+  </body>
+</html>

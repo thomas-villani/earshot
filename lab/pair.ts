@@ -3,6 +3,7 @@
 // shared with public addresses masked.
 import { acceptOffer, applyAnswer, createOffer, RTC_CONFIG, type GatherOptions, type LocalSide } from '../src/rtc/peer';
 import { decodeCompactSdp, type CompactSdp } from '../src/rtc/sdp-compact';
+import { ChannelTools, describe, selectedPath } from './rtc-tools';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const checked = (id: string) => $<HTMLInputElement>(id).checked;
@@ -11,6 +12,8 @@ const lines: string[] = [];
 let local: LocalSide | undefined;
 let remote: CompactSdp | undefined;
 let role = '?';
+let tools: ChannelTools | undefined;
+const CHUNK = Number(new URLSearchParams(location.search).get('chunk') ?? 16) * 1024;
 
 function log(msg: string): void {
   const line = `${((performance.now() - t0) / 1000).toFixed(2).padStart(7)}s  ${msg}`;
@@ -36,19 +39,6 @@ function unwrap(text: string, kind: 'O' | 'A'): Uint8Array | null {
   const m = new RegExp(`ES1${kind}([A-Za-z0-9_-]+)`).exec(text.replace(/\s+/g, ''));
   return m ? fromB64(m[1]) : null;
 }
-
-// ---- masking for the shareable report ----
-
-function maskAddress(a: string): string {
-  if (a.endsWith('.local')) return 'mdns';
-  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a)) return a; // private LAN: useful, not identifying
-  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a)) return 'cgnat4'; // 100.64/10 carrier NAT
-  if (a.includes('.')) return 'public4';
-  if (/^fe80:/i.test(a)) return 'linklocal6';
-  if (/^f[cd]/i.test(a)) return 'ula6';
-  return a.includes(':') ? 'public6' : '?';
-}
-const describe = (c: CompactSdp) => c.candidates.map((x) => `${x.type}:${maskAddress(x.address)}`).join(', ') || '(none)';
 
 function options(): GatherOptions {
   return { config: checked('opt-nostun') ? { iceServers: [] } : RTC_CONFIG, timeoutMs: 3000 };
@@ -76,81 +66,14 @@ function watch(side: LocalSide): void {
     void afterOpen(side);
   });
   side.channel.addEventListener('close', () => log('data channel closed'));
-  side.channel.binaryType = 'arraybuffer';
-  side.channel.addEventListener('message', onMessage);
+  tools = new ChannelTools(side.channel, log, CHUNK);
 }
 
 // ---- once open: path, RTT, throughput ----
 
 async function afterOpen(side: LocalSide): Promise<void> {
-  const stats = await side.pc.getStats();
-  stats.forEach((s) => {
-    if (s.type !== 'transport' || !s.selectedCandidatePairId) return;
-    const pair = stats.get(s.selectedCandidatePairId);
-    const l = stats.get(pair.localCandidateId);
-    const r = stats.get(pair.remoteCandidateId);
-    log(`path: ${l?.candidateType} ${maskAddress(l?.address ?? '')} → ${r?.candidateType} ${maskAddress(r?.address ?? '')} (${l?.protocol})`);
-  });
-  if (role === 'A') {
-    const rtts: number[] = [];
-    for (let i = 0; i < 5; i++) rtts.push(await ping(side.channel));
-    rtts.sort((a, b) => a - b);
-    log(`rtt ms: median ${rtts[2].toFixed(1)} (min ${rtts[0].toFixed(1)}, max ${rtts[4].toFixed(1)})`);
-  }
-}
-
-let pongWaiter: ((t: number) => void) | undefined;
-function ping(ch: RTCDataChannel): Promise<number> {
-  return new Promise((resolve) => {
-    const start = performance.now();
-    pongWaiter = () => resolve(performance.now() - start);
-    ch.send('ping');
-  });
-}
-
-const CHUNK = Number(new URLSearchParams(location.search).get('chunk') ?? 16) * 1024;
-let tpExpect = 0;
-let tpGot = 0;
-let tpFirst = 0;
-let tpDone: ((ms: number) => void) | undefined;
-
-function onMessage(e: MessageEvent): void {
-  const ch = e.target as RTCDataChannel;
-  if (typeof e.data === 'string') {
-    if (e.data === 'ping') ch.send('pong');
-    else if (e.data === 'pong') pongWaiter?.(0);
-    else if (e.data.startsWith('tp-start:')) {
-      tpExpect = Number(e.data.slice(9));
-      tpGot = 0;
-      tpFirst = 0;
-    } else if (e.data.startsWith('tp-done:')) tpDone?.(Number(e.data.slice(8)));
-    return;
-  }
-  if (!tpFirst) tpFirst = performance.now();
-  tpGot += (e.data as ArrayBuffer).byteLength;
-  if (tpGot >= tpExpect) {
-    const ms = performance.now() - tpFirst;
-    log(`received ${(tpGot / 1e6).toFixed(1)} MB at ${(tpGot / 1e6 / (ms / 1000)).toFixed(1)} MB/s`);
-    ch.send(`tp-done:${ms}`);
-  }
-}
-
-async function throughput(): Promise<void> {
-  const ch = local!.channel;
-  const total = 8 * 1024 * 1024;
-  const chunk = new Uint8Array(CHUNK);
-  crypto.getRandomValues(chunk);
-  ch.bufferedAmountLowThreshold = 1024 * 1024;
-  const done = new Promise<number>((r) => (tpDone = r));
-  ch.send(`tp-start:${total}`);
-  const start = performance.now();
-  for (let sent = 0; sent < total; sent += chunk.length) {
-    if (ch.bufferedAmount > 4 * 1024 * 1024) await new Promise((r) => ch.addEventListener('bufferedamountlow', r, { once: true }));
-    ch.send(chunk);
-  }
-  await done;
-  const ms = performance.now() - start;
-  log(`sent 8 MB in ${(ms / 1000).toFixed(2)} s = ${(total / 1e6 / (ms / 1000)).toFixed(1)} MB/s`);
+  log(`path: ${await selectedPath(side.pc)}`);
+  if (role === 'A') await tools!.rtt();
 }
 
 // ---- roles ----
@@ -232,7 +155,7 @@ $('offer-copy').onclick = () => void copy('offer-out');
 $('offer-share').onclick = () => share('offer-out');
 $('answer-copy').onclick = () => void copy('answer-out');
 $('answer-share').onclick = () => share('answer-out');
-$('throughput').onclick = () => void throughput().catch((e) => log(`throughput error: ${e}`));
+$('throughput').onclick = () => void tools!.throughput().catch((e) => log(`throughput error: ${e}`));
 $('report-copy').onclick = async () => {
   const head = [
     `role ${role}; ${navigator.userAgent}`,

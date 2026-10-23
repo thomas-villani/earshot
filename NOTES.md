@@ -236,6 +236,21 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - Laptop throughput: the WSL virtual adapter path gave 1.6 MB/s, IPv6 Wi-Fi gave 19.6 MB/s (headless, same machine). Phone throughput not yet recorded.
 - **Deferred to milestone 3** (easier once the handshake is by sound): phone ↔ phone, and one phone on mobile data.
 
+## v2 milestone 3: acoustic handshake (2026-10-23, in progress)
+
+- `src/rtc/handshake.ts`: offer/answer as typed messages (0x10/0x11, raw bytes), `splitFrameBytes`, and the 4-digit `verificationCode` (SHA-256 of the offer fingerprint followed by the answer fingerprint). `lab/handshake.html` runs the protocol and **ships in the build** (`/lab/handshake.html`), so two phones can try it without a laptop.
+- **Airtime** (ggwave, one frame): 70 B 5.0 s, 100 B 6.8 s, 140 B 9.3 s on Fast; Fastest is about half. Splitting the offer across both bands makes each frame ~75 B: **5.3 s per offer round on Dual Fast**.
+- **Headless, two tabs, real modem** (`?bus`: a BroadcastChannel stands in for the air):
+
+  | B taps Accept | connected after | why |
+  |---|---|---|
+  | right away | 12.4 s | answer fits in A's first listening window |
+  | 4 s late (4 s slack) | 27.5 s | missed the window by 0.2 s, so it waited one more offer round |
+  | 4 s late (6 s slack) | 16.5 s | fits; the slack is now 6 s |
+
+  Codes matched every time, and chat crossed the channel.
+- Real phones next: Android ↔ Android in a room, then one phone on mobile data.
+
 ## Manual test checklist (real devices)
 
 - [x] `AudioContext({ sampleRate: 48000 })` honored on Android Chrome (laptop Chrome too)
@@ -270,3 +285,5 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - [ ] v2: pairing phone ↔ phone (Android ↔ Android), same Wi-Fi; record throughput
 - [ ] v2: pairing with one phone on mobile data (expected to fail on carrier NAT unless both sides have IPv6)
 - [ ] v2: reconnect after the page returns from the background
+- [ ] v2: sound handshake phone ↔ phone (lab/handshake.html on the live site): time to connect, codes match, chat works
+- [ ] v2: sound handshake with one phone on mobile data

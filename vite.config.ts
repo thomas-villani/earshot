@@ -64,4 +64,8 @@ export default defineConfig({
   base: './',
   plugins: [basicSsl(), serviceWorker()],
   server: { host: true },
+  build: {
+    // The sound handshake lab ships too, so two phones can try it without a laptop dev server.
+    rollupOptions: { input: { main: 'index.html', handshake: 'lab/handshake.html' } },
+  },
 });

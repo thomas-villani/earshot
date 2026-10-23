@@ -225,6 +225,8 @@ The fixed part is 61 bytes (Chrome credentials). Candidates are chosen to fit a 
 1. Sender picks a file → creates `RTCPeerConnection` + data channel → gathers ICE (host + STUN srflx) → compacts offer → **plays it on a loop** (re-transmit every few seconds until answered or cancelled).
 2. Receiver (Listen tab) decodes RTC_OFFER → shows "Incoming file from nearby device — Accept?" → on accept, builds answer → plays RTC_ANSWER.
 3. **Collision handling:** receiver waits a random 0–800 ms after the offer ends before answering; if the sender hears garbage instead of a clean answer, it keeps looping the offer and receivers retry with backoff (simple ALOHA).
+
+   As built (milestone 3, `src/rtc/handshake.ts`, `lab/handshake.html`): half duplex. After each offer round the sender listens for the longest answer's airtime + 6 s. On Accept, the receiver answers at once if the rest of that window still fits the whole answer, otherwise just after the sender's next offer ends (+ random 0–800 ms). It answers again every time it hears the offer repeat until the channel opens. In dual-band modes the message is split into one fountain block per band (`splitFrameBytes`), so a 122 B offer takes 5.3 s on Dual Fast instead of 8.5 s as one SINGLE frame; a lane lost in one round is topped up by the next.
 4. Sender decodes answer (matching `sessionId`) → `setRemoteDescription` → stops looping.
 5. ICE + DTLS complete → data channel opens.
 6. **Verification code:** both screens show a 4-digit code derived from hash(offer fingerprint ‖ answer fingerprint). Users glance to confirm — protects against a third device in earshot injecting its own answer.
