@@ -255,7 +255,8 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
   |---|---|---|---|---|---|
   | laptop → phone | phone on 5G, laptop on home Wi-Fi | **14.0 s** (answer after round 1) | direct IPv6 | 53 ms | not valid (test started several times; now guarded) |
   | laptop → phone | same Wi-Fi | 28.6 s (Accept missed window 1) | direct IPv6 | 18 ms | 1.2 MB/s |
-  | laptop → phone | same Wi-Fi | worked (first try, no report) | | | |
+  | phone → laptop | same Wi-Fi | worked (no report) | | | |
+  | phone → laptop | phone on 5G, laptop on home Wi-Fi | answer sent straight away in window 1; channel open **6.3 s after Accept** | direct IPv6 | | |
   | phone → phone | same Wi-Fi | **failed**: handshake and code fine, ICE checking → failed after 15.4 s | | | |
 
   - After the answer is applied, the channel opens in 0.3–0.5 s.
