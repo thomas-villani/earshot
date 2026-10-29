@@ -104,3 +104,20 @@ export class ChannelTools {
     }
   }
 }
+
+/**
+ * Every candidate pair ICE tried, with its STUN counters. Tells a blocked network (nothing
+ * received from the other side) apart from a credentials problem (requests in, no responses).
+ */
+export async function candidatePairs(pc: RTCPeerConnection): Promise<string[]> {
+  const stats = await pc.getStats();
+  const out: string[] = [];
+  stats.forEach((s) => {
+    if (s.type !== 'candidate-pair') return;
+    const l = stats.get(s.localCandidateId);
+    const r = stats.get(s.remoteCandidateId);
+    const end = (c: any) => `${c?.candidateType} ${maskAddress(c?.address ?? '')}`;
+    out.push(`pair ${end(l)} → ${end(r)}: ${s.state}, requests sent ${s.requestsSent ?? 0} / received ${s.requestsReceived ?? 0}, responses received ${s.responsesReceived ?? 0} / sent ${s.responsesSent ?? 0}`);
+  });
+  return out.length ? out : ['no candidate pairs'];
+}

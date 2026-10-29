@@ -3,7 +3,7 @@
 // shared with public addresses masked.
 import { acceptOffer, applyAnswer, createOffer, RTC_CONFIG, type GatherOptions, type LocalSide } from '../src/rtc/peer';
 import { decodeCompactSdp, type CompactSdp } from '../src/rtc/sdp-compact';
-import { ChannelTools, describe, selectedPath } from './rtc-tools';
+import { candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const checked = (id: string) => $<HTMLInputElement>(id).checked;
@@ -53,7 +53,10 @@ async function maybeGrantMic(): Promise<void> {
 
 function watch(side: LocalSide): void {
   const pc = side.pc;
-  pc.addEventListener('iceconnectionstatechange', () => log(`ice: ${pc.iceConnectionState}`));
+  pc.addEventListener('iceconnectionstatechange', async () => {
+    log(`ice: ${pc.iceConnectionState}`);
+    if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') (await candidatePairs(pc)).forEach(log);
+  });
   pc.addEventListener('signalingstatechange', () => log(`signaling: ${pc.signalingState}`));
   pc.addEventListener('icecandidateerror', (e) => log(`ice candidate error ${(e as RTCPeerConnectionIceErrorEvent).errorCode} on ${(e as RTCPeerConnectionIceErrorEvent).url}`));
   pc.addEventListener('connectionstatechange', () => {

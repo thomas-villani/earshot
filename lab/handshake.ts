@@ -16,7 +16,7 @@ import { encodeHandshake, parseHandshake, splitFrameBytes, verificationCode, typ
 import { acceptOffer, applyAnswer, createOffer, type LocalSide } from '../src/rtc/peer';
 import { decodeCompactSdp, ONE_FRAME_BYTES, type CompactSdp } from '../src/rtc/sdp-compact';
 import { Spectrogram } from '../src/ui/spectrogram';
-import { ChannelTools, describe, selectedPath } from './rtc-tools';
+import { candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const t0 = performance.now();
@@ -143,7 +143,10 @@ let tStart = 0;
 
 function watch(side: LocalSide): void {
   const pc = side.pc;
-  pc.addEventListener('iceconnectionstatechange', () => log(`ice: ${pc.iceConnectionState}`));
+  pc.addEventListener('iceconnectionstatechange', async () => {
+    log(`ice: ${pc.iceConnectionState}`);
+    if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') (await candidatePairs(pc)).forEach(log);
+  });
   pc.addEventListener('connectionstatechange', () => log(`connection: ${pc.connectionState}`));
   tools = new ChannelTools(side.channel, log);
   tools.onChat = (text) => ($('chat-log').textContent += `them: ${text}\n`);
