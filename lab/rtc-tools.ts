@@ -121,3 +121,23 @@ export async function candidatePairs(pc: RTCPeerConnection): Promise<string[]> {
   });
   return out.length ? out : ['no candidate pairs'];
 }
+
+/** One test at a time: overlapping runs reset each other's counters and report nonsense. */
+export function bindThroughputButton(btn: HTMLButtonElement, tools: () => ChannelTools | undefined, log: (msg: string) => void): void {
+  const label = btn.textContent;
+  btn.onclick = async () => {
+    const t = tools();
+    if (!t || btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Sending 8 MB…';
+    log('throughput test started');
+    try {
+      await t.throughput();
+    } catch (e) {
+      log(`throughput error: ${e}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  };
+}

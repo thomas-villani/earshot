@@ -3,7 +3,7 @@
 // shared with public addresses masked.
 import { acceptOffer, applyAnswer, createOffer, RTC_CONFIG, type GatherOptions, type LocalSide } from '../src/rtc/peer';
 import { decodeCompactSdp, type CompactSdp } from '../src/rtc/sdp-compact';
-import { candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
+import { bindThroughputButton, candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const checked = (id: string) => $<HTMLInputElement>(id).checked;
@@ -158,7 +158,7 @@ $('offer-copy').onclick = () => void copy('offer-out');
 $('offer-share').onclick = () => share('offer-out');
 $('answer-copy').onclick = () => void copy('answer-out');
 $('answer-share').onclick = () => share('answer-out');
-$('throughput').onclick = () => void tools!.throughput().catch((e) => log(`throughput error: ${e}`));
+bindThroughputButton($<HTMLButtonElement>('throughput'), () => tools, log);
 $('report-copy').onclick = async () => {
   const head = [
     `role ${role}; ${navigator.userAgent}`,

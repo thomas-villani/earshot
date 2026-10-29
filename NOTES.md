@@ -249,7 +249,19 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
   | 4 s late (6 s slack) | 16.5 s | fits; the slack is now 6 s |
 
   Codes matched every time, and chat crossed the channel.
-- Real phones next: Android ↔ Android in a room, then one phone on mobile data.
+- **Real devices** (Dual Fast, volume 50, live site):
+
+  | A (offers) → B (answers) | network | connected after first offer | path | RTT median | 8 MB |
+  |---|---|---|---|---|---|
+  | laptop → phone | phone on 5G, laptop on home Wi-Fi | **14.0 s** (answer after round 1) | direct IPv6 | 53 ms | not valid (test started several times; now guarded) |
+  | laptop → phone | same Wi-Fi | 28.6 s (Accept missed window 1) | direct IPv6 | 18 ms | 1.2 MB/s |
+  | phone → laptop | same Wi-Fi | worked (first try, no report) | | | |
+  | phone → phone | same Wi-Fi | **failed**: handshake and code fine, ICE checking → failed after 15.4 s | | | |
+
+  - After the answer is applied, the channel opens in 0.3–0.5 s.
+  - **5G works without TURN thanks to IPv6.** The phone's IPv4 was carrier NAT (100.64/10), but carrier and home both hand out global IPv6, and host ↔ host IPv6 connected directly. Over IPv4 alone this case would need TURN.
+  - Phone ↔ phone failure: a phone works as the answering side (laptop → phone), so it is not an answerer bug. Remaining suspects: the second phone left the page, or the Wi-Fi isolates those two clients. The labs now log per-pair STUN counters on failure to tell these apart.
+  - 1.2 MB/s over Wi-Fi is low (headless laptop ↔ laptop: 19 MB/s). Suspects: phone Wi-Fi power saving (jumpy RTT 7–30 ms), 16 KB chunks, 4 MB buffer cap. Tune in milestone 4.
 
 ## Manual test checklist (real devices)
 

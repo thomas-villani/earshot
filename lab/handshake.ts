@@ -16,7 +16,7 @@ import { encodeHandshake, parseHandshake, splitFrameBytes, verificationCode, typ
 import { acceptOffer, applyAnswer, createOffer, type LocalSide } from '../src/rtc/peer';
 import { decodeCompactSdp, ONE_FRAME_BYTES, type CompactSdp } from '../src/rtc/sdp-compact';
 import { Spectrogram } from '../src/ui/spectrogram';
-import { candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
+import { bindThroughputButton, candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const t0 = performance.now();
@@ -325,7 +325,7 @@ $<HTMLFormElement>('chat-form').onsubmit = (e) => {
   $('chat-log').textContent += `me: ${input.value}\n`;
   input.value = '';
 };
-$('throughput').onclick = () => void tools?.throughput().catch((e) => log(`throughput error: ${e}`));
+bindThroughputButton($<HTMLButtonElement>('throughput'), () => tools, log);
 $('report-copy').onclick = async () => {
   const text = [`role ${role ?? '?'}; ${navigator.userAgent}`, `mode ${modeEl.selectedOptions[0].text}, volume ${volumeEl.value}`, ...lines].join('\n');
   try {
