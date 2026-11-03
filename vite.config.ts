@@ -65,7 +65,7 @@ export default defineConfig({
   plugins: [basicSsl(), serviceWorker()],
   server: { host: true },
   build: {
-    // The sound handshake lab ships too, so two phones can try it without a laptop dev server.
-    rollupOptions: { input: { main: 'index.html', handshake: 'lab/handshake.html' } },
+    // The RTC labs ship too, so devices can try them without a laptop dev server (pair: on separate networks).
+    rollupOptions: { input: { main: 'index.html', handshake: 'lab/handshake.html', pair: 'lab/pair.html' } },
   },
 });

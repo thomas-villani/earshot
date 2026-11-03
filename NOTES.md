@@ -256,12 +256,17 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
   | laptop → phone | phone on 5G, laptop on home Wi-Fi | **14.0 s** (answer after round 1) | direct IPv6 | 53 ms | not valid (test started several times; now guarded) |
   | laptop → phone | same Wi-Fi | 28.6 s (Accept missed window 1) | direct IPv6 | 18 ms | 1.2 MB/s |
   | phone → laptop | same Wi-Fi | worked (no report) | | | |
+  | second phone → laptop | same Wi-Fi | worked (no report) | | | |
   | phone → laptop | phone on 5G, laptop on home Wi-Fi | answer sent straight away in window 1; channel open **6.3 s after Accept** | direct IPv6 | | |
   | phone → phone | same Wi-Fi | **failed**: handshake and code fine, ICE checking → failed after 15.4 s | | | |
+  | phone ↔ phone (retry, second phone) | same Wi-Fi | failed again (no report) | | | |
+  | phone ↔ phone | at least one phone on 5G | worked (no report) | | | |
+  | phone ↔ phone | both on 5G | worked (no report) | | | |
 
   - After the answer is applied, the channel opens in 0.3–0.5 s.
   - **5G works without TURN thanks to IPv6.** The phone's IPv4 was carrier NAT (100.64/10), but carrier and home both hand out global IPv6, and host ↔ host IPv6 connected directly. Over IPv4 alone this case would need TURN.
-  - Phone ↔ phone failure: a phone works as the answering side (laptop → phone), so it is not an answerer bug. Remaining suspects: the second phone left the page, or the Wi-Fi isolates those two clients. The labs now log per-pair STUN counters on failure to tell these apart.
+  - Phone ↔ phone failure: only when both phones are on the same Wi-Fi. The same two phones connect when either is on 5G, so the compact SDP, the handshake and Android ↔ Android WebRTC all work, and neither phone is at fault on its own. That leaves the path between two phones on this LAN, although laptop ↔ phone works on it. No AP isolation setting was found on the router (Netgear CAX30), which does not prove it is off. Not yet known: whether checks reach the other phone at all. The labs log per-pair STUN counters on failure, so a report from both phones will show it.
+  - Same Wi-Fi is the main use case, and if the path is blocked STUN alone can't fix it. Possible fallback: tell people to turn off Wi-Fi on one phone.
   - 1.2 MB/s over Wi-Fi is low (headless laptop ↔ laptop: 19 MB/s). Suspects: phone Wi-Fi power saving (jumpy RTT 7–30 ms), 16 KB chunks, 4 MB buffer cap. Tune in milestone 4.
 
 ## Manual test checklist (real devices)
@@ -299,4 +304,5 @@ Static-model compressor for short messages (`src/compress/`): byte-level vocabul
 - [ ] v2: pairing with one phone on mobile data (expected to fail on carrier NAT unless both sides have IPv6)
 - [ ] v2: reconnect after the page returns from the background
 - [ ] v2: sound handshake phone ↔ phone (lab/handshake.html on the live site): time to connect, codes match, chat works
-- [ ] v2: sound handshake with one phone on mobile data
+- [x] v2: sound handshake with one phone on mobile data (also both on mobile data)
+- [ ] v2: link pairing feasibility (lab/pair.html on the live site, two different networks): connect rate, and whether it still connects with "Grant mic first" off on both sides

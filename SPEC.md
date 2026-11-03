@@ -254,6 +254,7 @@ v2 is **one-to-one** per handshake. To send to another device, the sender starts
 3. **Acoustic handshake:** replace copy-paste with sound; add the verification code.
 4. **File transfer** with backpressure, hashing, progress.
 5. **Cross-platform matrix:** Android Chrome, iOS Safari, desktop Chrome/Firefox/Safari; same Wi-Fi vs. one-side-cellular.
+6. **Send by link (remote transfer):** a second way to carry the same offer and answer, for people far apart. The sender shares a link with the offer in its `#fragment`, so the static host never receives it; the recipient taps to accept and sends back a reply code or link. Both must be online at the same time, with the sender's page open. Comes after file transfer, since it reuses it. Test first with `lab/pair.html`: how often do separate networks connect without TURN, and does it need mic permission? Chrome hides host addresses without media permission, and host IPv6 is what connected the 5G tests. Show a clear message when the networks can't connect. See Security notes.
 
 **Done when (target):** a 20 MB photo moves from an Android phone to an iPhone on the same Wi-Fi after a sub-15-second chirp handshake.
 
@@ -376,6 +377,7 @@ Once a data channel exists, it's a game transport:
 - Anyone in earshot can **hear** every transmission and **send** frames. Treat all decoded content as untrusted.
 - Never auto-open URLs, auto-save files, auto-join Wi-Fi, or auto-run assistant prompts — always one explicit tap with the full content visible.
 - v2 relies on the DTLS fingerprint exchanged over sound + the visual verification code for peer authenticity.
+- Send by link: the token reveals the sender's public IP address to the recipient and the messaging service, and anyone who can alter the message can swap in their own token. Four digits are too few there, because an attacker in the middle can try certificates until the codes match, so use a longer code and compare it over a call. Opening a link never connects or transfers anything without an explicit tap.
 - Stretch (v1): optional passphrase mode — PBKDF2 → AES-GCM encrypt the message before framing.
 
 ## Stack
