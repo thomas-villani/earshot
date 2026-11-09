@@ -152,16 +152,21 @@ const PAIR_SNAPSHOT_MS = 5000;
 function watch(side: LocalSide): void {
   const pc = side.pc;
   const current = () => local === side;
+  const snapshotLater = () =>
+    setTimeout(async () => {
+      if (!current() || !['checking', 'disconnected'].includes(pc.iceConnectionState)) return;
+      log(`not connected ${PAIR_SNAPSHOT_MS / 1000} s into checking:`);
+      (await candidatePairs(pc)).forEach(log);
+    }, PAIR_SNAPSHOT_MS);
+  // The answerer starts checking while it gathers, before this runs, so it would miss the event.
+  if (pc.iceConnectionState !== 'new') {
+    log(`ice: ${pc.iceConnectionState} (already)`);
+    if (pc.iceConnectionState === 'checking') snapshotLater();
+  }
   pc.addEventListener('iceconnectionstatechange', async () => {
     if (!current()) return;
     log(`ice: ${pc.iceConnectionState}`);
-    if (pc.iceConnectionState === 'checking') {
-      setTimeout(async () => {
-        if (!current() || pc.iceConnectionState !== 'checking') return;
-        log(`still checking after ${PAIR_SNAPSHOT_MS / 1000} s:`);
-        (await candidatePairs(pc)).forEach(log);
-      }, PAIR_SNAPSHOT_MS);
-    }
+    if (pc.iceConnectionState === 'checking') snapshotLater();
     if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') (await candidatePairs(pc)).forEach(log);
   });
   pc.addEventListener('connectionstatechange', () => current() && log(`connection: ${pc.connectionState}`));
