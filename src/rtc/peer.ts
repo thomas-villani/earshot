@@ -25,6 +25,25 @@ export interface GatherOptions {
   omitCandidates?: boolean;
   /** Override RTC_CONFIG (e.g. no STUN, for testing host-only paths). */
   config?: RTCConfiguration;
+  /**
+   * DTLS certificate to use. Reusing one keeps the fingerprint (and so the verification code) the
+   * same when an answer is rebuilt.
+   */
+  certificate?: RTCCertificate;
+}
+
+const configFor = (opts: GatherOptions): RTCConfiguration => {
+  const base = opts.config ?? RTC_CONFIG;
+  return opts.certificate ? { ...base, certificates: [opts.certificate] } : base;
+};
+
+/** A DTLS certificate for `GatherOptions.certificate`. */
+export const newCertificate = () => RTCPeerConnection.generateCertificate({ name: 'ECDSA', namedCurve: 'P-256' } as EcKeyGenParams);
+
+/** SHA-256 fingerprint of a certificate, as the compact SDP carries it. Null if the browser won't say. */
+export function certificateFingerprint(cert: RTCCertificate): Uint8Array | null {
+  const fp = cert.getFingerprints?.().find((f) => f.algorithm?.toLowerCase() === 'sha-256');
+  return fp?.value ? new Uint8Array(fp.value.split(':').map((h) => parseInt(h, 16))) : null;
 }
 
 export interface LocalSide {
@@ -82,7 +101,7 @@ async function finishLocal(pc: RTCPeerConnection, channel: RTCDataChannel, sessi
 /** Sender side: new connection, gathered offer, compacted. */
 export async function createOffer(sessionId: number, opts: GatherOptions = {}): Promise<LocalSide> {
   const t0 = performance.now();
-  const pc = new RTCPeerConnection(opts.config ?? RTC_CONFIG);
+  const pc = new RTCPeerConnection(configFor(opts));
   const channel = pc.createDataChannel('earshot', CHANNEL);
   await pc.setLocalDescription(await pc.createOffer());
   return finishLocal(pc, channel, sessionId, opts, t0);
@@ -93,7 +112,7 @@ export async function acceptOffer(offerBytes: Uint8Array, opts: GatherOptions = 
   const offer = decodeCompactSdp(offerBytes);
   if (!offer || offer.setup !== 'actpass') return null;
   const t0 = performance.now();
-  const pc = new RTCPeerConnection(opts.config ?? RTC_CONFIG);
+  const pc = new RTCPeerConnection(configFor(opts));
   const channel = pc.createDataChannel('earshot', CHANNEL);
   await pc.setRemoteDescription({ type: 'offer', sdp: buildSdp(offer) });
   await pc.setLocalDescription(await pc.createAnswer());

@@ -6,6 +6,11 @@
 // B answers every time it hears the offer again until the channel opens, so a lost answer only
 // costs one round.
 //
+// B's ICE agent starts checking the moment B makes its answer, and gives up ~15 s later if A never
+// replies. A can only reply once it has heard the answer, which can be a whole offer round (~17 s)
+// after Accept. So B rebuilds its answer just before each send (same certificate, so the code
+// doesn't change), which starts B's ICE clock at most ~1 s before A's.
+//
 // ?bus replaces the speaker and mic with a BroadcastChannel between two tabs of this page (still
 // through the real modem), for testing without two phones.
 import { AudioIO, SAMPLE_RATE } from '../src/audio/audio-io';
@@ -13,7 +18,7 @@ import { randomNonce, Receiver, Transmission } from '../src/framing/pipeline';
 import { GgwaveModem } from '../src/modem/ggwave-modem';
 import type { ProtocolId } from '../src/modem/modem';
 import { encodeHandshake, parseHandshake, splitFrameBytes, verificationCode, type HandshakeKind } from '../src/rtc/handshake';
-import { acceptOffer, applyAnswer, createOffer, type LocalSide } from '../src/rtc/peer';
+import { acceptOffer, applyAnswer, createOffer, newCertificate, type LocalSide } from '../src/rtc/peer';
 import { decodeCompactSdp, ONE_FRAME_BYTES, type CompactSdp } from '../src/rtc/sdp-compact';
 import { Spectrogram } from '../src/ui/spectrogram';
 import { bindThroughputButton, candidatePairs, ChannelTools, describe, selectedPath } from './rtc-tools';
@@ -141,13 +146,25 @@ let tools: ChannelTools | undefined;
 let open = false;
 let tStart = 0;
 
+/** Sample the candidate pairs this long into checking: Chrome deletes dead pairs before it reports failure. */
+const PAIR_SNAPSHOT_MS = 5000;
+
 function watch(side: LocalSide): void {
   const pc = side.pc;
+  const current = () => local === side;
   pc.addEventListener('iceconnectionstatechange', async () => {
+    if (!current()) return;
     log(`ice: ${pc.iceConnectionState}`);
+    if (pc.iceConnectionState === 'checking') {
+      setTimeout(async () => {
+        if (!current() || pc.iceConnectionState !== 'checking') return;
+        log(`still checking after ${PAIR_SNAPSHOT_MS / 1000} s:`);
+        (await candidatePairs(pc)).forEach(log);
+      }, PAIR_SNAPSHOT_MS);
+    }
     if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') (await candidatePairs(pc)).forEach(log);
   });
-  pc.addEventListener('connectionstatechange', () => log(`connection: ${pc.connectionState}`));
+  pc.addEventListener('connectionstatechange', () => current() && log(`connection: ${pc.connectionState}`));
   tools = new ChannelTools(side.channel, log);
   tools.onChat = (text) => ($('chat-log').textContent += `them: ${text}\n`);
   side.channel.addEventListener('open', async () => {
@@ -161,6 +178,7 @@ function watch(side: LocalSide): void {
     if (role === 'A') await tools!.rtt();
   });
   side.channel.addEventListener('close', () => {
+    if (!current()) return; // a stale answer's connection, replaced by rebuildAnswer
     log('data channel closed');
     status('Disconnected');
   });
@@ -226,7 +244,9 @@ $('cancel').onclick = () => {
 
 // ---- Phone B: ask, then answer in A's listening window ----
 
-let accepted: { offer: CompactSdp; tx: Transmission } | undefined;
+let accepted: { offer: CompactSdp; offerBytes: Uint8Array; cert: RTCCertificate; tx: Transmission; builtAt: number } | undefined;
+/** Rebuild the answer before sending if its ICE agent has been running longer than this. */
+const ANSWER_FRESH_MS = 2000;
 let lastOfferEnd = 0;
 let answering = false;
 
@@ -246,12 +266,13 @@ function onOffer(offer: CompactSdp, bytes: Uint8Array, from: number): void {
     $<HTMLButtonElement>('offer').disabled = true;
     tStart = performance.now();
     const modem = await modemReady;
-    const side = await acceptOffer(bytes);
+    const cert = await newCertificate();
+    const side = await acceptOffer(bytes, { certificate: cert });
     if (!side) return log('offer rejected');
     local = side;
     watch(side);
     log(`answer: ${side.bytes.length} B, gathered in ${Math.round(side.gatherMs)} ms; candidates: ${describe(side.compact)}`);
-    accepted = { offer, tx: handshakeTx('answer', side.bytes, modem) };
+    accepted = { offer, offerBytes: bytes, cert, tx: handshakeTx('answer', side.bytes, modem), builtAt: performance.now() };
     await showCode(offer, side.compact);
     // A is still listening if its window has room for the whole answer; else wait for its next offer.
     const answerMs = (waveFor(handshakeTx('answer', side.bytes, modem), modem).length / SAMPLE_RATE) * 1000;
@@ -276,6 +297,7 @@ async function sendAnswer(delayMs: number): Promise<void> {
   try {
     await sleep(delayMs);
     const modem = await modemReady;
+    if (performance.now() - accepted.builtAt > ANSWER_FRESH_MS) await rebuildAnswer(modem);
     status('Sending the answer…');
     const wave = waveFor(accepted.tx, modem);
     log(`answer: playing ${(wave.length / SAMPLE_RATE).toFixed(1)} s after ${Math.round(delayMs)} ms`);
@@ -283,6 +305,25 @@ async function sendAnswer(delayMs: number): Promise<void> {
     if (!open) status('Connecting… (the answer repeats if the other phone sends its offer again)');
   } finally {
     answering = false;
+  }
+}
+
+/** A fresh answer (new ICE credentials and candidates, same certificate) replaces the stale one. */
+async function rebuildAnswer(modem: GgwaveModem): Promise<void> {
+  const a = accepted!;
+  const old = local!;
+  const ageMs = performance.now() - a.builtAt;
+  const side = await acceptOffer(a.offerBytes, { certificate: a.cert });
+  if (!side) return log('could not rebuild the answer; sending the old one');
+  local = side;
+  old.pc.close();
+  watch(side);
+  a.tx = handshakeTx('answer', side.bytes, modem);
+  a.builtAt = performance.now();
+  log(`answer rebuilt (old one's ICE had run ${(ageMs / 1000).toFixed(1)} s): ${side.bytes.length} B, gathered in ${Math.round(side.gatherMs)} ms; candidates: ${describe(side.compact)}`);
+  if (side.compact.fingerprint.some((b, i) => b !== old.compact.fingerprint[i])) {
+    log('fingerprint changed; new code');
+    await showCode(a.offer, side.compact);
   }
 }
 
